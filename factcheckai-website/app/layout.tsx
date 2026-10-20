@@ -1,22 +1,8 @@
 import type { Metadata } from "next";
-import { Space_Grotesk, IBM_Plex_Mono } from "next/font/google";
+import { GeistSans } from "geist/font/sans";
+import { GeistMono } from "geist/font/mono";
 import "./globals.css";
 import StructuredData from "@/components/StructuredData";
-import ThreeBackground from "@/components/ThreeBackground";
-
-const spaceGrotesk = Space_Grotesk({ 
-  subsets: ["latin"],
-  variable: "--font-space-grotesk",
-  weight: ['400', '500', '600', '700'],
-  display: 'swap',
-});
-
-const ibmPlexMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  variable: "--font-ibm-plex-mono",
-  weight: ['400', '500', '600'],
-  display: 'swap',
-});
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://truvantaai.tech'),
@@ -90,6 +76,7 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       { url: '/favicon.ico', sizes: 'any' },
+      { url: '/icon.svg', type: 'image/svg+xml' },
       { url: '/icon-192.png', sizes: '192x192', type: 'image/png' },
       { url: '/icon-512.png', sizes: '512x512', type: 'image/png' },
     ],
@@ -112,28 +99,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
       <head>
-        {/* Preconnect to external domains for faster loading */}
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        
-        {/* Material Icons */}
-        <link
-          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap"
-          rel="stylesheet"
-        />
-        
-        {/* DNS Prefetch for performance */}
-        <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
-        <link rel="dns-prefetch" href="https://fonts.gstatic.com" />
-        
-        {/* Viewport meta for proper mobile rendering */}
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5" />
         
         {/* Theme color for mobile browsers */}
-        <meta name="theme-color" content="#fbbf24" media="(prefers-color-scheme: dark)" />
-        <meta name="theme-color" content="#fbbf24" media="(prefers-color-scheme: light)" />
+        <meta name="theme-color" content="#0a0a0b" media="(prefers-color-scheme: dark)" />
+        <meta name="theme-color" content="#0a0a0b" media="(prefers-color-scheme: light)" />
         
         {/* Apple mobile web app */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -141,11 +113,10 @@ export default function RootLayout({
         <meta name="apple-mobile-web-app-title" content="TruvantaAI" />
         
         {/* Microsoft application */}
-        <meta name="msapplication-TileColor" content="#fbbf24" />
+        <meta name="msapplication-TileColor" content="#0a0a0b" />
         <meta name="msapplication-config" content="/browserconfig.xml" />
       </head>
-      <body className={`${spaceGrotesk.variable} ${ibmPlexMono.variable} font-sans antialiased min-h-screen bg-background text-on-surface`}>
-        <ThreeBackground />
+      <body className="font-sans min-h-screen bg-canvas text-fg">
         <StructuredData />
         {children}
       </body>

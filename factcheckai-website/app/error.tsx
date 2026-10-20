@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import MaterialSymbols from '@/components/MaterialSymbols';
 
 export default function Error({
   error,
@@ -16,6 +17,7 @@ export default function Error({
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-surface px-4">
+      <MaterialSymbols />
       <div className="max-w-md w-full text-center">
         <div className="mb-8">
           <span className="material-symbols-outlined text-6xl text-error">

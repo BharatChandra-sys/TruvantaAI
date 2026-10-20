@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
+import MaterialSymbols from '@/components/MaterialSymbols';
 
 export const metadata: Metadata = {
   title: 'Support & Contact',
@@ -13,6 +14,7 @@ export const metadata: Metadata = {
 export default function Support() {
   return (
     <div className="min-h-screen flex flex-col bg-surface">
+      <MaterialSymbols />
       <Header />
       
       <main className="w-full pt-24 pb-12 bg-surface max-w-4xl mx-auto px-4 md:px-8 flex-1">

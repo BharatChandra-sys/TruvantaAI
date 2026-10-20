@@ -456,6 +456,13 @@
         min-height: 200px;
         max-height: 400px;
       }
+      #__Truvanta_inline_chat__ .chat-messages:empty::before {
+        content: "👋 Ask me anything about the selected content...";
+        color: #6b7280;
+        font-size: 13px;
+        text-align: center;
+        padding: 40px 20px;
+      }
       #__Truvanta_inline_chat__ .chat-message {
         display: flex;
         flex-direction: column;
@@ -575,33 +582,57 @@
       const loadingId = addChatMessage("assistant", "Analyzing...", true);
       
       try {
+        console.log("[TruvantaAI Content] Sending chat message:", message.substring(0, 50));
+        
         // Get API endpoint - use production URL directly
         const API_URL = localStorage.getItem("FORCE_LOCAL_DEV") === "true"
           ? "http://localhost:8000"
           : "https://factcheckai-gjrk.onrender.com";
         
-        // Get auth token
-        const { token } = await chrome.storage.local.get("token");
+        console.log("[TruvantaAI Content] Using API URL:", API_URL);
         
-        // Call message API with context
-        const response = await fetch(`${API_URL}/message`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(token && { "Authorization": `Bearer ${token}` })
-          },
-          body: JSON.stringify({
-            message: message,
-            history: [{ role: "user", content: context }],
-            session_id: null
-          })
-        });
+        // Get auth token - FIXED: await was missing proper handling
+        const storageResult = await chrome.storage.local.get("token");
+        const token = storageResult.token;
+        console.log("[TruvantaAI Content] Auth token:", token ? "Found ✓" : "Missing ✗");
         
-        if (!response.ok) {
-          throw new Error(`API error: ${response.status}`);
-        }
+        // Create abort controller for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 45000); // 45s timeout
         
-        const data = await response.json();
+        try {
+          // Call message API with context
+          const response = await fetch(`${API_URL}/message`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...(token && { "Authorization": `Bearer ${token}` })
+            },
+            body: JSON.stringify({
+              message: message,
+              history: [{ role: "user", content: context }],
+              session_id: null
+            }),
+            signal: controller.signal
+          });
+          
+          clearTimeout(timeoutId);
+          
+          console.log("[TruvantaAI Content] API response status:", response.status);
+          
+          if (!response.ok) {
+            if (response.status === 401) {
+              throw new Error("Authentication required. Please log in to the extension.");
+            } else if (response.status === 429) {
+              throw new Error("Too many requests. Please wait a moment and try again.");
+            }
+            throw new Error(`API error: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          console.log("[TruvantaAI Content] API response:", data.is_claim ? "Claim detected" : "Chat reply");
+        
+        clearTimeout(timeoutId);
         
         // Remove loading message
         removeChatMessage(loadingId);
@@ -633,9 +664,25 @@
         }
         
       } catch (error) {
-        console.error("[TruvantaAI] Chat error:", error);
+        console.error("[TruvantaAI Content] Chat error:", error);
         removeChatMessage(loadingId);
-        addChatMessage("assistant", "Sorry, I'm having trouble connecting. Please try again later.");
+        
+        // Better error messages based on error type
+        let errorMessage = "Sorry, I'm having trouble connecting. ";
+        
+        if (error.name === 'AbortError') {
+          errorMessage = "Request timed out. The AI is taking longer than expected. Please try again.";
+        } else if (error.message.includes("Authentication")) {
+          errorMessage = error.message + "\n\nClick the extension icon to log in.";
+        } else if (error.message.includes("Too many requests")) {
+          errorMessage = error.message;
+        } else if (error.message.includes("NetworkError") || error.message.includes("Failed to fetch")) {
+          errorMessage = "Network error. Please check your internet connection and try again.";
+        } else {
+          errorMessage += "Please try again later.";
+        }
+        
+        addChatMessage("assistant", errorMessage);
       } finally {
         sendBtn.disabled = false;
         input.focus();
@@ -690,7 +737,7 @@
     messageDiv.id = messageId;
     messageDiv.innerHTML = `
       <div class="message-role ${role}">${role === "user" ? "You" : "TruvantaAI"}</div>
-      <div class="message-content ${role} ${isLoading ? 'loading' : ''}">${content}</div>
+      <div class="message-content ${role} ${isLoading ? 'loading' : ''}">${content.replace(/\n/g, '<br>')}</div>
     `;
     
     messagesContainer.appendChild(messageDiv);

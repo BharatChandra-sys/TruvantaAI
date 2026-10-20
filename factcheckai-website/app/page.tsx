@@ -1,41 +1,27 @@
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
-import HeroSection from '@/components/HeroSection';
-import TrustStrip from '@/components/TrustStrip';
-import ClaimChecker from '@/components/ClaimChecker';
-import HowItWorks from '@/components/HowItWorks';
-import EvidenceSection from '@/components/EvidenceSection';
-import TechnologySection from '@/components/TechnologySection';
-import BrowserExtension from '@/components/BrowserExtension';
-import UncertaintySection from '@/components/UncertaintySection';
-import TransparencySection from '@/components/TransparencySection';
-import OpenSourceSection from '@/components/OpenSourceSection';
-import FAQSection from '@/components/FAQSection';
-import CTASection from '@/components/CTASection';
+import MotionProvider from '@/components/landing/MotionProvider';
+import Hero from '@/components/landing/Hero';
+import Walkthrough from '@/components/landing/Walkthrough';
+import Evidence from '@/components/landing/Evidence';
+import Verdicts from '@/components/landing/Verdicts';
+import Privacy from '@/components/landing/Privacy';
+import FAQ, { Closing } from '@/components/landing/FAQ';
 
 export default function Home() {
   return (
-    <div className="min-h-screen flex flex-col bg-surface">
+    <MotionProvider>
       <Header />
-      
-      <main className="w-full pt-16 bg-surface max-w-7xl mx-auto px-4 md:px-8 lg:px-12 flex-1">
-        <div className="flex flex-col w-full">
-          <HeroSection />
-          <TrustStrip />
-          <ClaimChecker />
-          <HowItWorks />
-          <EvidenceSection />
-          <TechnologySection />
-          <BrowserExtension />
-          <UncertaintySection />
-          <TransparencySection />
-          <OpenSourceSection />
-          <FAQSection />
-          <CTASection />
-        </div>
+      <main>
+        <Hero />
+        <Walkthrough />
+        <Evidence />
+        <Verdicts />
+        <Privacy />
+        <FAQ />
+        <Closing />
       </main>
-
       <Footer />
-    </div>
+    </MotionProvider>
   );
 }

@@ -1,114 +1,128 @@
 @import "tailwindcss";
 
 @theme {
-  /* TruvantaAI Brand Colors - Yellow/Orange, Black, White */
-  --color-brand-yellow: #fbbf24; /* Main yellow/orange accent */
-  --color-brand-orange: #f59e0b; /* Secondary orange */
-  --color-brand-amber: #f97316; /* Tertiary amber */
-  --color-surface: #0a0a0a; /* Pure black background */
-  --color-surface-dim: #000000; /* Deeper black */
-  --color-surface-container: #171717; /* Card backgrounds */
-  --color-surface-container-low: #0f0f0f; /* Subtle containers */
-  --color-surface-container-high: #262626; /* Elevated containers */
-  --color-surface-container-highest: #404040; /* Highest elevation */
-  --color-surface-container-lowest: #000000; /* Lowest surface */
-  --color-on-primary: #78350f; /* Dark brown text on yellow */
-  --color-on-secondary: #7c2d12; /* Dark text on orange */
-  --color-on-surface: #ffffff; /* Pure white text */
-  --color-on-surface-variant: #a3a3a3; /* Gray text */
-  --color-primary: #fef3c7; /* Light yellow */
-  --color-primary-container: #fbbf24; /* Yellow container */
-  --color-on-primary-fixed: #78350f; /* Dark text on yellow */
-  --color-secondary-container: #f59e0b; /* Orange container */
-  --color-tertiary-container: #f97316; /* Amber container */
-  --color-error: #fca5a5; /* Light red */
-  --color-error-container: #991b1b; /* Dark red */
-  --color-on-error: #450a0a; /* Darker red */
-  --color-outline: #737373; /* Border gray */
-  --color-outline-variant: #404040; /* Subtle borders */
-  --color-background: #0a0a0a; /* Black background */
-  --color-on-background: #ffffff; /* White text */
-  --color-surface-tint: #fbbf24; /* Yellow tint */
-  --color-secondary: #10b981; /* Success green */
-  --color-tertiary: #fbbf24; /* Yellow accent */
-  
-  --font-family-sans: var(--font-space-grotesk), system-ui, -apple-system, sans-serif;
-  --font-family-mono: var(--font-ibm-plex-mono), 'SF Mono', 'Monaco', 'Consolas', monospace;
+  /* Neutrals: slightly cool, never pure black or white */
+  --color-canvas: #0a0a0b;
+  --color-raised: #111113;
+  --color-panel: #17171a;
+  --color-panel-2: #1f1f23;
+  --color-line: rgb(255 255 255 / 0.08);
+  --color-line-strong: rgb(255 255 255 / 0.14);
+  --color-fg: #ededef;
+  --color-fg-2: #a1a1aa;
+  --color-fg-3: #6b6b73;
+
+  /* One accent: primary action, verdict card edge, focus ring */
+  --color-accent: #ffc53d;
+  --color-accent-hover: #ffd465;
+  --color-on-accent: #1a1300;
+
+  /* Verdict semantics, only inside verdict UI */
+  --color-true: #3dd68c;
+  --color-false: #ff6166;
+  --color-unsure: #a1a1aa;
+
+  /* Legacy tokens still used by install / privacy / support / terms pages */
+  --color-brand-yellow: #ffc53d;
+  --color-brand-orange: #ffd465;
+  --color-surface: #0a0a0b;
+  --color-surface-container: #17171a;
+  --color-surface-container-low: #111113;
+  --color-surface-container-high: #1f1f23;
+  --color-surface-container-highest: #2a2a2f;
+  --color-surface-container-lowest: #0a0a0b;
+  --color-on-surface: #ededef;
+  --color-on-surface-variant: #a1a1aa;
+  --color-primary-container: #ffc53d;
+  --color-on-primary-fixed: #1a1300;
+  --color-outline: #6b6b73;
+  --color-outline-variant: #2a2a2f;
+  --color-background: #0a0a0b;
+  --color-surface-tint: #ffc53d;
+  --color-secondary: #3dd68c;
+  --color-tertiary: #ffc53d;
+  --color-error: #ff6166;
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Type scale */
+  --text-display-xl: clamp(3rem, 1.6rem + 6vw, 6.5rem);
+  --text-display-xl--line-height: 1;
+  --text-display-xl--letter-spacing: -0.045em;
+  --text-display-xl--font-weight: 600;
+  --text-display: clamp(2.5rem, 1.6rem + 3.6vw, 4.5rem);
+  --text-display--line-height: 1.04;
+  --text-display--letter-spacing: -0.035em;
+  --text-display--font-weight: 600;
+  --text-title: clamp(1.5rem, 1.2rem + 1vw, 2rem);
+  --text-title--line-height: 1.15;
+  --text-title--letter-spacing: -0.02em;
+  --text-title--font-weight: 600;
+  --text-lead: clamp(1.125rem, 1rem + 0.4vw, 1.3125rem);
+  --text-lead--line-height: 1.45;
+  --text-lead--letter-spacing: -0.011em;
+  --text-body: 1.0625rem;
+  --text-body--line-height: 1.55;
+  --text-body--letter-spacing: -0.006em;
+  --text-caption: 0.8125rem;
+  --text-caption--line-height: 1.4;
+
+  /* Radii */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  /* Motion */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-sheet: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 @layer base {
-  html, body {
-    background: #0a0a0a;
-    color: #ffffff;
+  html {
+    background: var(--color-canvas);
+    color-scheme: dark;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--color-canvas);
+    color: var(--color-fg);
     margin: 0;
-    padding: 0;
-    overscroll-behavior: none;
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
   }
 
-  ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-  }
-
-  ::-webkit-scrollbar-track {
-    background: #171717;
-  }
-
-  ::-webkit-scrollbar-thumb {
-    background: #404040;
-    border-radius: 4px;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    background: #737373;
-  }
-
-  ::selection {
-    background-color: #fbbf24;
-    color: #0a0a0a;
-  }
-
-  h1, h2, h3, h4, h5, h6 {
-    color: #ffffff;
-  }
-
-  a {
-    transition: color 0.2s;
-  }
-}
-
-@layer utilities {
-  .text-balance {
+  h1, h2, h3 {
     text-wrap: balance;
   }
 
-  .glass-morphism {
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+  p {
+    text-wrap: pretty;
   }
-  
-  /* Smooth scrolling */
+
+  ::selection {
+    background-color: rgb(255 197 61 / 0.28);
+    color: var(--color-fg);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 3px;
+    border-radius: 6px;
+  }
+
   @media (prefers-reduced-motion: no-preference) {
     html {
       scroll-behavior: smooth;
     }
   }
-  
-  /* Focus visible for accessibility */
-  *:focus-visible {
-    outline: 2px solid #fbbf24;
-    outline-offset: 2px;
-    border-radius: 4px;
-  }
-  
-  /* High contrast mode support */
-  @media (prefers-contrast: high) {
-    * {
-      border-color: currentColor !important;
-    }
-  }
-  
-  /* Reduced motion support */
+
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,
@@ -119,57 +133,36 @@
       scroll-behavior: auto !important;
     }
   }
-  
-  /* Industry-grade animations */
-  .animate-fade-in {
-    animation: fadeIn 0.6s ease-out forwards;
+}
+
+@layer components {
+  .container-page {
+    width: 100%;
+    max-width: 1200px;
+    margin-inline: auto;
+    padding-inline: 20px;
   }
-  
-  .animate-slide-up {
-    animation: slideUp 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+
+  @media (min-width: 640px) {
+    .container-page { padding-inline: 32px; }
   }
-  
-  .animate-scale-in {
-    animation: scaleIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+
+  @media (min-width: 1024px) {
+    .container-page { padding-inline: 48px; }
   }
-  
-  @keyframes fadeIn {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
+
+  .section-y {
+    padding-block: clamp(96px, 10vw + 40px, 176px);
   }
-  
-  @keyframes slideUp {
-    from {
-      opacity: 0;
-      transform: translateY(30px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
+
+  /* The one elevation, for real objects: browser frame and popup */
+  .elevated {
+    box-shadow:
+      0 0 0 1px rgb(255 255 255 / 0.06),
+      0 24px 64px -16px rgb(0 0 0 / 0.6);
   }
-  
-  @keyframes scaleIn {
-    from {
-      opacity: 0;
-      transform: scale(0.9);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1);
-    }
-  }
-  
-  /* Smooth transitions */
-  .transition-smooth {
-    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-  
-  .transition-spring {
-    transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  .text-balance {
+    text-wrap: balance;
   }
 }
