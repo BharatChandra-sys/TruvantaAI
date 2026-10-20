@@ -1,8 +1,16 @@
 import type { NextConfig } from "next";
 
+// HSTS and upgrade-insecure-requests only make sense when served over HTTPS.
+// On a plain-http LAN address (e.g. testing on a phone) they make the browser
+// request every script over https, which fails and leaves the page unhydrated.
+const httpsOnly = process.env.VERCEL === '1';
+
 const nextConfig: NextConfig = {
   // Enable React strict mode for better development experience
   reactStrictMode: true,
+
+  // Let phones on the local network use the dev server (live reload etc.)
+  allowedDevOrigins: ['192.168.*.*', '10.*.*.*', '172.*.*.*'],
   
   // Production optimizations
   compress: true,
@@ -27,10 +35,9 @@ const nextConfig: NextConfig = {
             value: 'on'
           },
           // HSTS
-          {
-            key: 'Strict-Transport-Security',
-            value: 'max-age=63072000; includeSubDomains; preload'
-          },
+          ...(httpsOnly
+            ? [{ key: 'Strict-Transport-Security', value: 'max-age=63072000; includeSubDomains; preload' }]
+            : []),
           // Prevent MIME sniffing
           {
             key: 'X-Content-Type-Options',
@@ -69,7 +76,7 @@ const nextConfig: NextConfig = {
               "frame-ancestors 'self'",
               "base-uri 'self'",
               "form-action 'self'",
-              "upgrade-insecure-requests"
+              ...(httpsOnly ? ["upgrade-insecure-requests"] : []),
             ].join('; ')
           }
         ]
