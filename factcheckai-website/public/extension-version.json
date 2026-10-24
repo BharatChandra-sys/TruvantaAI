@@ -9,9 +9,9 @@
     "Updated all UI elements with new brand identity",
     "New extension icons with transparent background"
   ],
-  "backend_url": "https://factcheckai-gjrk.onrender.com",
+  "backend_url": "https://factcheckai-coq3.onrender.com",
   "website_url": "https://factcheckaisix.vercel.app",
-  "download_url": "https://factcheckaisix.vercel.app/truvantaai-extension.zip",
+  "download_url": "https://factcheckaisix.vercel.app/truvanta-v2.6.2.zip",
   "branding": {
     "name": "TruvantaAI",
     "tagline": "Real-time fake news detection powered by AI",
