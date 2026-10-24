@@ -91,6 +91,10 @@ backend/training/UPLOAD_CHECKLIST.md
 .cursorrules
 .cursorignore
 
+# ── Deployment documentation folder ──────────────────────────
+# Temporary development docs, testing scripts, and planning files
+deployment-docs/
+
 # ── Test/debug JSON files ─────────────────────────────────────
 # These are local test artifacts — NOT for GitHub
 test_cerebras.json
@@ -115,6 +119,18 @@ recreate_nijam_history.py
 check_vector_dim.py
 audit_database.py
 test_deployment.py
+discover_groq_models.py
+fix_ai_apis.py
+test_all_ai_apis.py
+test_new_groq_key.py
+check_brevo_senders.py
+check_compatibility.py
+test_email_flow.py
+test_chat_fix.bat
+test_email.bat
+test_health.bat
+verify_canonical.bat
+fix_brevo_ip.bat
 !backend/tests/
 
 # Old documentation patterns (local only)
@@ -125,6 +141,27 @@ CODE_QUALITY*.md
 *_IMPLEMENTATION.md
 *_SUMMARY.md
 !PROGRESS_SUMMARY.md
+AI_API_STATUS.md
+API_KEYS_SUMMARY.md
+BREVO_*.md
+BREVO_*.txt
+CHAT_*.md
+CRITICAL_*.md
+DEPLOYMENT_CHECKLIST.md
+DYNAMIC_MODELS_COMPLETE.md
+EMAIL_*.md
+FAVICON_*.md
+FIXES_SUMMARY_*.md
+GET_NEW_API_KEYS.md
+POST_PUSH_ACTIONS.md
+PRE_PUSH_CHECKLIST.md
+PUSH_COMMANDS.txt
+QUICK_TEST_GUIDE.md
+RENDER_*.md
+SYSTEM_STATUS.md
+UPDATE_RENDER_ENV.md
+WEBSITE_DEPLOYMENT.md
+FINAL_COMMIT_MESSAGE.txt
 
 # Old training guides and scripts
 FINAL_*.py
@@ -160,6 +197,12 @@ commands.txt
 !render.yaml
 /secrets.env
 /Procfile
+/demoofweb.html
+/test-truth-scan.html
+/create_*.py
+/fix_*.py
+/new-fullcontextofplsn.md
+/newplan.md
 
 # HuggingFace Space clones (local only)
 /factcheckai-ml-serve/

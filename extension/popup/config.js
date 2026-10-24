@@ -3,14 +3,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Project: TruvantaAI � https://github.com/BharatChandra-sys/fake-news-extension
 // ── Backend API URL ───────────────────────────────────────────
-// Auto-selects production vs dev based on Chrome extension context.
-// Default: Production (Render) - override with FORCE_LOCAL_DEV=true for local testing
-const _FORCE_LOCAL = localStorage.getItem("FORCE_LOCAL_DEV") === "true";
-const _IS_PROD = !_FORCE_LOCAL;
-
-const API = _IS_PROD
-  ? "https://factcheckai-gjrk.onrender.com"   // Production (Render)
-  : "http://localhost:8000";                   // Local dev (set FORCE_LOCAL_DEV=true in console)
+// Comes from ../env.js (USE_LOCAL_BACKEND). For a one-off production test
+// without editing env.js: localStorage.setItem("FORCE_PRODUCTION", "true").
+const _IS_PROD = !USE_LOCAL_BACKEND || localStorage.getItem("FORCE_PRODUCTION") === "true";
+const API = _IS_PROD ? TRUVANTA_PROD_API : TRUVANTA_LOCAL_API;
 
 const API_TIMEOUT_MS = 45000;  // 45s for AI reasoning tasks
 const CLIENT_NAME = "edge-extension";
@@ -18,7 +14,6 @@ const CLIENT_VERSION = (chrome?.runtime?.getManifest?.().version) || "unknown";
 
 // Debug: log which API is being used
 console.log(`[TruvantaAI] API endpoint: ${API} (prod=${_IS_PROD})`);
-// To switch to local dev: localStorage.setItem("FORCE_LOCAL_DEV", "true") then reload
 
 function buildHeaders(extra = {}) {
 	return {

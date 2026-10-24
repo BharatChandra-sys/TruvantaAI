@@ -22,6 +22,9 @@ class MessageRequest(BaseModel):
     session_id: Optional[int] = None
     history: Optional[List[dict]] = Field(default_factory=list)
     image_url: Optional[str] = None   # URL of image attached to the claim
+    # The user explicitly asked for a fact-check (e.g. the extension's Check
+    # button), so skip the chat-vs-claim classification step.
+    check: bool = False
 
     @field_validator("message")
     @classmethod

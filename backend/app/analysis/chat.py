@@ -12,6 +12,7 @@ _env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file_
 load_dotenv(_env_path)
 
 # Import central AI config for dynamic model discovery
+from app.analysis.model_registry import ModelCallError, registry, try_models
 from app.analysis.ai_config import (
     get_api_keys, get_all_working_models, get_first_working_model,
     CEREBRAS_URL, GROQ_URL, MINIMAX_URL, OPENROUTER_URL, GEMINI_URL_BASE
@@ -124,8 +125,29 @@ def _call_openai_compat(url: str, key: str, model: str, messages: list, max_toke
         json={"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens},
         timeout=15
     )
-    r.raise_for_status()
+    if r.status_code != 200:
+        raise ModelCallError(r.status_code, r.text[:300])
     return r.json()["choices"][0]["message"]["content"].strip()
+
+
+def _registry_fns(messages: list, **kwargs) -> list:
+    """
+    One entry per OpenAI-compatible provider. Each tries that provider's
+    best-ranked models and reports the outcome, so dead models are skipped
+    next time and newly released ones get picked up.
+    """
+    keys = _get_keys()
+    fns = []
+    for name, url, key_name in (("OpenRouter", OPENROUTER_URL, "openrouter"),
+                                ("Groq", GROQ_URL, "groq"),
+                                ("Cerebras", CEREBRAS_URL, "cerebras")):
+        key = keys.get(key_name)
+        if not key or not registry.provider_available(key_name):
+            continue
+        fns.append((name, lambda u=url, k=key, p=key_name: try_models(
+            p, get_all_working_models(p),
+            lambda m: _call_openai_compat(u, k, m, messages, **kwargs), limit=2)))
+    return fns
 
 
 def _call_gemini(messages: list, max_tokens=400, temperature=0.7) -> str:
@@ -191,15 +213,21 @@ def _call_minimax_chat(messages: list, max_tokens=400, temperature=0.7) -> str:
 
 
 def _first_success(fn_list):
-    """Run list of (name, callable) in parallel, return first success."""
+    """Run list of (name, callable) in parallel, return the first success
+    without waiting for the slower ones to finish."""
+    if not fn_list:
+        raise RuntimeError("No AI providers configured")
     errors = []
-    with ThreadPoolExecutor(max_workers=len(fn_list)) as executor:
+    executor = ThreadPoolExecutor(max_workers=len(fn_list))
+    try:
         futures = {executor.submit(fn): name for name, fn in fn_list}
         for future in as_completed(futures):
             try:
                 return future.result()
             except Exception as e:
                 errors.append(f"{futures[future]}: {e}")
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
     raise RuntimeError(" | ".join(errors))
 
 
@@ -231,29 +259,9 @@ def is_claim(text: str) -> bool:
     messages = [{"role": "user", "content": prompt}]
     keys = _get_keys()
 
-    fns = []
-    # Prioritize FREE providers
-    if keys["openrouter"]:
-        fns.append(("OpenRouter", lambda: _call_openai_compat(OPENROUTER_URL, keys["openrouter"], "google/gemma-2-9b-it:free", messages, max_tokens=5, temperature=0)))
-    
-    # Groq - use dynamic model discovery
-    if keys["groq"]:
-        groq_models = get_all_working_models("groq")
-        if groq_models:
-            model = groq_models[0]  # Use first available
-            fns.append((f"Groq-{model}", lambda m=model: _call_openai_compat(GROQ_URL, keys["groq"], m, messages, max_tokens=5, temperature=0)))
-    
-    # Gemini as backup (may have quota limits)
+    fns = _registry_fns(messages, max_tokens=5, temperature=0)
     if keys["gemini"]:
         fns.append(("Gemini", lambda: _call_gemini(messages, max_tokens=5, temperature=0)))
-    
-    # Cerebras - use dynamic model discovery
-    if keys["cerebras"]:
-        cerebras_models = get_all_working_models("cerebras")
-        if cerebras_models:
-            model = cerebras_models[0]
-            fns.append((f"Cerebras-{model}", lambda m=model: _call_openai_compat(CEREBRAS_URL, keys["cerebras"], m, messages, max_tokens=5, temperature=0)))
-    
     if keys["minimax"]:
         fns.append(("MiniMax", lambda: _call_minimax_chat(messages, max_tokens=5, temperature=0)))
 
@@ -286,32 +294,11 @@ def run_chat(message: str, history: list) -> str:
     msgs.append({"role": "user", "content": message})
 
     keys = _get_keys()
-    fns = []
-    # Prioritize FREE providers
-    if keys["openrouter"]:
-        fns.append(("OpenRouter", lambda: _call_openai_compat(OPENROUTER_URL, keys["openrouter"], "google/gemma-2-9b-it:free", msgs)))
-    
-    # Groq - use dynamic model discovery
-    if keys["groq"]:
-        groq_models = get_all_working_models("groq")
-        if groq_models:
-            model = groq_models[0]  # Use first available
-            fns.append((f"Groq-{model}", lambda m=model: _call_openai_compat(GROQ_URL, keys["groq"], m, msgs)))
-    
-    # Gemini as backup (may have quota limits)
+    fns = _registry_fns(msgs)
     if keys["gemini"]:
         fns.append(("Gemini", lambda: _call_gemini(msgs)))
-    
-    # MiniMax M2.7-highspeed for chat — fastest with high quality
     if keys["minimax"]:
         fns.append(("MiniMax", lambda: _call_minimax_chat(msgs)))
-    
-    # Cerebras - use dynamic model discovery
-    if keys["cerebras"]:
-        cerebras_models = get_all_working_models("cerebras")
-        if cerebras_models:
-            model = cerebras_models[0]
-            fns.append((f"Cerebras-{model}", lambda m=model: _call_openai_compat(CEREBRAS_URL, keys["cerebras"], m, msgs)))
 
     try:
         return _first_success(fns)

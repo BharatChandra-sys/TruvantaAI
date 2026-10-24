@@ -8,9 +8,12 @@ import os
 import re
 import json
 import logging
+import time
 import requests
-from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FutureTimeoutError
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from typing import List, Optional, Tuple
+
+from app.analysis.model_registry import ModelCallError, registry, try_models
 
 logger = logging.getLogger(__name__)
 
@@ -20,13 +23,9 @@ _POOL = ThreadPoolExecutor(max_workers=5, thread_name_prefix="ai-provider")
 
 CEREBRAS_URL  = "https://api.cerebras.ai/v1/chat/completions"
 GROQ_URL      = "https://api.groq.com/openai/v1/chat/completions"
-GEMINI_URL    = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent"
 # MiniMax M2.7 — 229B MoE, recursive self-improvement, SOTA real-world engineering
 # OpenAI-compatible endpoint. Falls back to M2.7-highspeed for lower latency.
 MINIMAX_URL   = "https://api.minimax.io/v1/chat/completions"
-# Gemma 4 31B-it — Google's latest open model, 256K context, reasoning mode
-# Uses the same Google AI Studio key as Gemini (GEMINI_API_KEY)
-GEMMA4_MODEL  = "gemma-4-31B-it"
 # OpenRouter — FREE tier with multiple models (Google Gemma 2 9B, Meta Llama 3.1 8B, etc)
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
@@ -83,20 +82,24 @@ def _verdict_to_score(verdict: str) -> float:
 
 
 def _call_openai_compat(url: str, key: str, model: str, text: str,
-                         timeout: int = 12, max_tokens: int = 500) -> dict:
+                         timeout: int = 12, max_tokens: int = 500,
+                         system: str = SYSTEM_PROMPT, user: Optional[str] = None) -> dict:
     """Shared helper for OpenAI-compatible chat completion endpoints."""
     payload = {
         "model": model,
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user",   "content": f"Claim: {text}"}
+            {"role": "system", "content": system},
+            {"role": "user",   "content": user if user is not None else f"Claim: {text}"}
         ],
         "temperature": 0.1,
         "max_tokens": max_tokens,
     }
     
-    # Disable reasoning mode for reasoning models to avoid token waste
-    if "gpt-oss" in model or "qwen" in model:
+    # Keep reasoning short for a quick verdict. gpt-oss only accepts
+    # low/medium/high; Qwen 3 can switch reasoning off entirely.
+    if "gpt-oss" in model:
+        payload["reasoning_effort"] = "low"
+    elif "qwen" in model:
         payload["reasoning_effort"] = "none"
     
     r = requests.post(
@@ -106,24 +109,8 @@ def _call_openai_compat(url: str, key: str, model: str, text: str,
         timeout=timeout,
     )
     
-    # Log failures for debugging
     if r.status_code != 200:
-        error_detail = r.text[:300]
-        logger.warning("%s failed: %s %s", model, r.status_code, error_detail)
-        
-        # Check for specific error types
-        if r.status_code == 400:
-            # Check if model requires terms acceptance
-            if "terms" in error_detail.lower() or "accept" in error_detail.lower():
-                raise ValueError(f"Model {model} requires terms acceptance")
-        elif r.status_code == 402:
-            raise ValueError(f"Model {model} requires payment (quota exhausted)")
-        elif r.status_code == 413:
-            raise ValueError(f"Model {model} payload too large")
-        elif r.status_code == 404:
-            raise ValueError(f"Model {model} not found or unavailable")
-    
-    r.raise_for_status()
+        raise ModelCallError(r.status_code, r.text[:300])
     raw = r.json()["choices"][0]["message"]["content"].strip()
     return _parse_structured(raw)
 
@@ -142,15 +129,8 @@ def _call_cerebras(text: str) -> dict:
     if not models:
         raise ValueError("Cerebras free tier exhausted (payment required)")
     
-    # Try each model until one works
-    for model in models:
-        try:
-            return _call_openai_compat(CEREBRAS_URL, key, model, text)
-        except Exception as e:
-            logger.debug(f"Cerebras {model} failed: {e}")
-            continue
-    
-    raise ValueError("All Cerebras models failed")
+    return try_models("cerebras", models,
+                      lambda model: _call_openai_compat(CEREBRAS_URL, key, model, text))
 
 
 def _call_groq(text: str) -> dict:
@@ -164,90 +144,76 @@ def _call_groq(text: str) -> dict:
     # Try to discover available models
     models = discover_groq_models(key)
     
-    # Try only TOP 3 models for speed (gpt-oss-120b, gpt-oss-20b, qwen)
-    for model in models[:3]:
-        try:
-            return _call_openai_compat(GROQ_URL, key, model, text, timeout=10)
-        except Exception as e:
-            logger.debug(f"Groq {model} failed: {e}")
-            continue
-    
-    raise ValueError("All Groq models failed")
+    return try_models("groq", models,
+                      lambda model: _call_openai_compat(GROQ_URL, key, model, text, timeout=10))
+
+
+def _post_json(url: str, payload: dict, timeout: int) -> dict:
+    r = requests.post(url, headers={"Content-Type": "application/json"}, json=payload, timeout=timeout)
+    if r.status_code != 200:
+        raise ModelCallError(r.status_code, r.text[:300])
+    return r.json()
+
+
+def _call_google_generate(key: str, model: str, text: str, max_tokens: int = 300, timeout: int = 12,
+                          system: str = SYSTEM_PROMPT, user: Optional[str] = None) -> dict:
+    """Google AI Studio generateContent (Gemini and Gemma models)."""
+    prompt = f"{system}\n\n{user if user is not None else f'Claim: {text}'}"
+    data = _post_json(
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}",
+        {
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "generationConfig": {"temperature": 0.1, "maxOutputTokens": max_tokens},
+        },
+        timeout,
+    )
+    raw = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    return _parse_structured(raw)
+
+
+def _is_gemma(model: str) -> bool:
+    return "gemma" in model.lower()
 
 
 def _call_gemini(text: str) -> dict:
     """
-    Gemini via web2api proxy (supports AQ. session tokens) OR direct API.
-    Prioritizes proxy (100% success rate), tries only TOP 3 models for speed.
+    Gemini via the web2api proxy (supports AQ. session tokens) when it is
+    reachable, otherwise Google AI Studio directly (AIza... keys only).
     """
     from app.analysis.ai_config import get_api_keys, discover_gemini_proxy_models, discover_gemini_models
-    
+
     keys = get_api_keys()
     key = keys.get("gemini")
     proxy_url = keys.get("gemini_proxy")
-    
     if not key and not proxy_url:
         raise ValueError("Gemini API key and proxy both missing")
-    
-    # Try web2api proxy first (BEST - 8/8 working, 1.0 confidence)
-    if proxy_url:
+
+    errors = []
+    if proxy_url and registry.provider_available("gemini_proxy"):
+        def via_proxy(model):
+            data = _post_json(f"{proxy_url}/v1/chat/completions", {
+                "model": model,
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": f"Claim: {text}"},
+                ],
+                "temperature": 0.1,
+                "max_tokens": 300,
+            }, 12)
+            return _parse_structured(data["choices"][0]["message"]["content"].strip())
         try:
-            # Discover available models from proxy
-            models = discover_gemini_proxy_models(proxy_url)
-            
-            # Try only TOP 3 models for speed (3.7, 3.6, 3.5)
-            for model in models[:3]:
-                try:
-                    r = requests.post(
-                        f"{proxy_url}/v1/chat/completions",
-                        headers={"Content-Type": "application/json"},
-                        json={
-                            "model": model,
-                            "messages": [
-                                {"role": "system", "content": SYSTEM_PROMPT},
-                                {"role": "user", "content": f"Claim: {text}"}
-                            ],
-                            "temperature": 0.1,
-                            "max_tokens": 300
-                        },
-                        timeout=12
-                    )
-                    if r.status_code == 200:
-                        raw = r.json()["choices"][0]["message"]["content"].strip()
-                        return _parse_structured(raw)
-                    logger.debug(f"Proxy {model} returned {r.status_code}")
-                except Exception as e:
-                    logger.debug(f"Proxy {model} failed: {e}")
-                    continue
+            return try_models("gemini_proxy", discover_gemini_proxy_models(proxy_url), via_proxy)
         except Exception as e:
-            logger.warning(f"Gemini proxy error: {e}")
-    
-    # Fallback to direct API (for AIzaSy keys only) - try TOP 2 models
+            errors.append(str(e))
+
     if key and not key.startswith("AQ."):
-        models = discover_gemini_models(key)
-        prompt = f"{SYSTEM_PROMPT}\n\nClaim: {text}"
-        
-        for model in models[:2]:  # Only top 2 for speed
-            try:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-                r = requests.post(
-                    f"{url}?key={key}",
-                    headers={"Content-Type": "application/json"},
-                    json={
-                        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                        "generationConfig": {"temperature": 0.1, "maxOutputTokens": 300}
-                    },
-                    timeout=10
-                )
-                if r.status_code == 200:
-                    raw = r.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-                    return _parse_structured(raw)
-                logger.debug(f"Gemini {model} returned {r.status_code}")
-            except Exception as e:
-                logger.debug(f"Gemini {model} failed: {e}")
-                continue
-    
-    raise ValueError("All Gemini models failed")
+        models = [m for m in discover_gemini_models(key) if not _is_gemma(m)]
+        try:
+            return try_models("gemini", models, lambda m: _call_google_generate(key, m, text), limit=2)
+        except Exception as e:
+            errors.append(str(e))
+
+    raise ValueError("All Gemini models failed: " + "; ".join(errors)[:300])
 
 
 def _call_minimax(text: str) -> dict:
@@ -271,40 +237,17 @@ def _call_minimax(text: str) -> dict:
 
 def _call_gemma4(text: str) -> dict:
     """
-    Google Gemma 4 31B-it — 256K context, multimodal, reasoning mode (April 2026).
-    Uses the same Google AI Studio key as Gemini (GEMINI_API_KEY).
-    Superior multilingual understanding and nuanced fact-checking.
-    Falls back through model chain if a specific version isn't available yet on the API.
+    Google's open Gemma models, through the same AI Studio key as Gemini.
+    Uses whichever Gemma models the key can see, largest and newest first.
     """
+    from app.analysis.ai_config import discover_gemini_models
+
     key = _get_keys()["gemini"]
-    if not key:
-        raise ValueError("Gemini/Gemma API key missing")
-    prompt = f"{SYSTEM_PROMPT}\n\nClaim: {text}"
-    # Try newest Gemma 4 first, then Gemma 3 27B, then Gemini 3.5 Flash (current as of Sept 2026)
-    for model in ["gemma-4-31b-it", "gemma-3-27b-it", "gemini-3.5-flash"]:
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
-            r = requests.post(
-                f"{url}?key={key}",
-                headers={"Content-Type": "application/json"},
-                json={
-                    "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-                    "generationConfig": {
-                        "temperature": 0.1,
-                        "maxOutputTokens": 400,
-                    }
-                },
-                timeout=15
-            )
-            if r.status_code != 200:
-                logger.warning("Gemma/Gemini model %s failed: %s", model, r.status_code)
-                continue
-            r.raise_for_status()
-            raw = r.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
-            return _parse_structured(raw)
-        except Exception:
-            continue
-    raise ValueError("Gemma 4 31B / Gemma 3 27B / Gemini 3.5 Flash all failed")
+    if not key or key.startswith("AQ."):
+        raise ValueError("Gemma needs a Google AI Studio key (AIza...)")
+    models = [m for m in discover_gemini_models(key) if _is_gemma(m)]
+    return try_models("gemma", models,
+                      lambda m: _call_google_generate(key, m, text, max_tokens=400, timeout=15), limit=2)
 
 
 def _call_openrouter(text: str) -> dict:
@@ -322,15 +265,8 @@ def _call_openrouter(text: str) -> dict:
     # Discover free models
     models = discover_openrouter_models(key)
     
-    # Try only TOP 3 models for speed (nex-pro, ling-vl, liquid)
-    for model in models[:3]:
-        try:
-            return _call_openai_compat(OPENROUTER_URL, key, model, text, timeout=12)
-        except Exception as e:
-            logger.debug(f"OpenRouter {model} failed: {e}")
-            continue
-    
-    raise ValueError("All OpenRouter free models failed")
+    return try_models("openrouter", models,
+                      lambda model: _call_openai_compat(OPENROUTER_URL, key, model, text, timeout=12))
 
 
 def _call_huggingface(text: str) -> dict:
@@ -421,72 +357,66 @@ def _ensemble_vote(results: List[dict]) -> dict:
     }
 
 
+# How long to wait for more votes once one provider has answered, and the
+# hard cap for the whole ensemble.
+_GRACE_AFTER_FIRST_S = 3.0
+_ENSEMBLE_TIMEOUT_S = 20.0
+
+
 def _run_all_parallel(text: str):
     """
-    Run AI providers in OPTIMIZED ORDER with parallel execution.
-    Prioritizes fastest + most reliable providers first.
-    
-    Provider Priority (based on 2026-09-22 testing):
-    1. Gemini Proxy - BEST (8/8 models work, 1.0 confidence, 2s avg, 100% success rate)
-    2. Groq - GREAT (4/4 models work, 0.99 confidence, 2-3s avg, free tier)
-    3. OpenRouter - GOOD (7/10 models work, free tier, good diversity)
-    4. Cerebras - SKIP (payment required, 0/2 models work)
-    
-    Each provider has a 20-second timeout to prevent hung providers from blocking.
+    Ask every configured provider in parallel and collect their verdicts.
+
+    Returns as soon as one provider has answered and the others have had a
+    short grace period to add their vote, so a slow or broken provider never
+    holds up the result. Providers whose key was rejected are skipped
+    entirely until the registry's hold expires.
     """
     keys = _get_keys()
-    providers = []
-
-    # Priority 1: Gemini Proxy (MOST RELIABLE - 100% success rate)
-    if keys["gemini_proxy"]:
-        providers.append(("gemini", _call_gemini))  # Uses proxy first
-        providers.append(("gemma4", _call_gemma4))  # Gemma variant
-    
-    # Priority 2: Groq (FAST + RELIABLE - 4/4 working)
+    candidates = []
+    if keys["gemini_proxy"] or keys["gemini"]:
+        candidates.append(("gemini", _call_gemini))
+    if keys["gemini"] and not keys["gemini"].startswith("AQ."):
+        candidates.append(("gemma4", _call_gemma4))
     if keys["groq"]:
-        providers.append(("groq", _call_groq))
-    
-    # Priority 3: OpenRouter (GOOD DIVERSITY - 7/10 working)
+        candidates.append(("groq", _call_groq))
     if keys["openrouter"]:
-        providers.append(("openrouter", _call_openrouter))
-    
-    # SKIP Cerebras (payment required - 0/2 working)
-    # if keys["cerebras"]:
-    #     providers.append(("cerebras", _call_cerebras))
-    
-    # SKIP MiniMax (not tested yet)
-    # if keys["minimax"]:
-    #     providers.append(("minimax", _call_minimax))
+        candidates.append(("openrouter", _call_openrouter))
+    if keys["cerebras"]:
+        candidates.append(("cerebras", _call_cerebras))
 
+    registry_name = {"gemma4": "gemma"}
+    providers = [(n, fn) for n, fn in candidates if registry.provider_available(registry_name.get(n, n))]
     if not providers:
-        return [], {"all": "No API keys configured"}
+        return [], {"all": "No API keys configured" if not candidates else "All providers on hold"}
 
-    successes = []
-    errors = {}
-
-    # Submit to module-level pool (no create/destroy overhead)
+    successes, errors = [], {}
     futures = {_POOL.submit(fn, text): name for name, fn in providers}
+    pending = set(futures)
+    deadline = time.monotonic() + _ENSEMBLE_TIMEOUT_S
 
-    # as_completed with 20s total wall-clock timeout (reduced from 25s for speed)
-    try:
-        for future in as_completed(futures, timeout=20):
+    while pending:
+        now = time.monotonic()
+        limit = deadline if not successes else min(deadline, first_success_at + _GRACE_AFTER_FIRST_S)
+        if now >= limit:
+            break
+        done, pending = wait(pending, timeout=limit - now, return_when=FIRST_COMPLETED)
+        for future in done:
             name = futures[future]
             try:
                 result = future.result()
                 result["_source"] = name
                 successes.append(result)
-                logger.info(f"✅ {name} succeeded")
+                if len(successes) == 1:
+                    first_success_at = time.monotonic()
+                logger.info("✅ %s answered (%s)", name, result.get("_model", "?"))
             except Exception as e:
                 errors[name] = str(e)
-                logger.warning(f"❌ {name} failed: {str(e)[:100]}")
-    except FutureTimeoutError:
-        # Cancel any still-running futures
-        for future, name in futures.items():
-            if not future.done():
-                future.cancel()
-                errors[name] = "timeout"
-        logger.warning("AI providers timed out: %s", list(errors.keys()))
+                logger.warning("❌ %s failed: %s", name, str(e)[:160])
 
+    for future in pending:          # still running: don't wait, just stop counting them
+        future.cancel()
+        errors[futures[future]] = "skipped (too slow)"
     return successes, errors
 
 
@@ -580,3 +510,148 @@ def run_ai_analysis(text: str):
     )
     
     return fake_score, explanation
+
+
+# ══════════════════════════════════════════════════════════════
+# Grounded verdict: the model judges retrieved passages, not memory
+# ══════════════════════════════════════════════════════════════
+
+GROUNDED_PROMPT = """You are a professional fact-checker. Judge the claim using ONLY the numbered sources below. Today's date is {today}.
+
+Respond with ONLY a JSON object, no markdown:
+{{
+  "verdict": "real" | "fake" | "uncertain",
+  "confidence": <float 0.0-1.0>,
+  "explanation": "<2-4 short sentences. Put [n] after each sentence the sources support, using the source numbers.>",
+  "stances": {{"1": "support" | "refute" | "neutral", "2": ...}}
+}}
+
+Rules:
+- "real" means the sources support the claim, "fake" means they refute it, "uncertain" means they are mixed or do not settle it.
+- Base the verdict on the sources. Use general knowledge only to read them correctly, never as the only reason.
+- A published fact-check rating is strong evidence, but only if it is about the same claim.
+- Give a stance for every source number. "neutral" means the source does not address the claim.
+- Cite only source numbers that appear below, and only for sources that address the claim.
+- Do not describe sources that are irrelevant; just mark them "neutral". Be calm and factual; no disclaimers."""
+
+# Hedge: start with the fastest provider, add the others only if it is slow.
+_HEDGE_AFTER_S = 2.0
+_GROUNDED_TIMEOUT_S = 12.0
+_CITATION = re.compile(r"\[(\d+)\]")
+
+
+def _format_sources(passages: List[dict]) -> str:
+    lines = []
+    for i, p in enumerate(passages, 1):
+        meta = ", ".join(x for x in (p.get("source"), p.get("published", "")[:10]) if x)
+        lines.append(f"[{i}] {p.get('title', '')[:160]} ({meta})\n{p.get('text', '')}")
+    return "\n\n".join(lines)
+
+
+def _grounded_providers(system: str, user: str):
+    """(registry name, callable) per provider, fastest and most reliable first."""
+    from app.analysis.ai_config import (discover_groq_models, discover_openrouter_models,
+                                        discover_gemini_models)
+    keys = _get_keys()
+    out = []
+    if keys["groq"]:
+        out.append(("groq", lambda: try_models(
+            "groq", discover_groq_models(keys["groq"]),
+            lambda m: _call_openai_compat(GROQ_URL, keys["groq"], m, "", timeout=10, max_tokens=700,
+                                          system=system, user=user), limit=2)))
+    if keys["gemini"] and not keys["gemini"].startswith("AQ."):
+        out.append(("gemini", lambda: try_models(
+            "gemini", [m for m in discover_gemini_models(keys["gemini"]) if not _is_gemma(m)],
+            lambda m: _call_google_generate(keys["gemini"], m, "", max_tokens=700, timeout=10,
+                                            system=system, user=user), limit=1)))
+    if keys["openrouter"]:
+        out.append(("openrouter", lambda: try_models(
+            "openrouter", discover_openrouter_models(keys["openrouter"]),
+            lambda m: _call_openai_compat(OPENROUTER_URL, keys["openrouter"], m, "", timeout=10,
+                                          max_tokens=700, system=system, user=user), limit=1)))
+    return [(n, fn) for n, fn in out if registry.provider_available(n)]
+
+
+def _first_hedged(providers) -> Optional[dict]:
+    """Run the first provider; if it hasn't answered in _HEDGE_AFTER_S, run the rest too."""
+    if not providers:
+        return None
+    futures = {}
+    start = time.monotonic()
+    queue = list(providers)
+    name, fn = queue.pop(0)
+    futures[_POOL.submit(fn)] = name
+    hedged = False
+    while futures:
+        elapsed = time.monotonic() - start
+        if elapsed >= _GROUNDED_TIMEOUT_S:
+            break
+        wait_for = _GROUNDED_TIMEOUT_S - elapsed if hedged else max(0.0, _HEDGE_AFTER_S - elapsed)
+        done, _ = wait(list(futures), timeout=wait_for, return_when=FIRST_COMPLETED)
+        for f in done:
+            src = futures.pop(f)
+            try:
+                result = f.result()
+                result["_source"] = src
+                for other in futures:
+                    other.cancel()
+                return result
+            except Exception as e:
+                logger.warning("grounded %s failed: %s", src, str(e)[:160])
+        if not hedged and (not futures or time.monotonic() - start >= _HEDGE_AFTER_S):
+            hedged = True
+            for name, fn in queue:
+                futures[_POOL.submit(fn)] = name
+            queue = []
+    return None
+
+
+def run_grounded_analysis(claim: str, passages: List[dict]) -> Optional[dict]:
+    """
+    Verdict from retrieved passages. Returns None when no provider answers,
+    otherwise: verdict, confidence, explanation (with [n] citations),
+    stances {index: support|refute|neutral}, ai_score (fake probability), model.
+    """
+    if not passages:
+        return None
+    from datetime import date
+    system = GROUNDED_PROMPT.format(today=date.today().isoformat())
+    user = f"Claim: {claim}\n\nSources:\n{_format_sources(passages)}"
+
+    result = _first_hedged(_grounded_providers(system, user))
+    if not result:
+        return None
+
+    n = len(passages)
+    verdict = str(result.get("verdict", "uncertain")).lower().strip()
+    if verdict not in ("real", "fake", "uncertain"):
+        verdict = "uncertain"
+    try:
+        conf = max(0.0, min(1.0, float(result.get("confidence", 0.5))))
+    except (TypeError, ValueError):
+        conf = 0.5
+    # Drop citations to sources that were never given.
+    explanation = _CITATION.sub(lambda m: m.group(0) if 1 <= int(m.group(1)) <= n else "",
+                                str(result.get("explanation", ""))).strip()
+    stances = {}
+    for k, v in (result.get("stances") or {}).items():
+        try:
+            i = int(k)
+        except (TypeError, ValueError):
+            continue
+        if 1 <= i <= n and v in ("support", "refute", "neutral"):
+            stances[i] = v
+
+    score = _verdict_to_score(verdict)
+    if verdict == "fake":
+        score = max(score, conf * 0.95)
+    elif verdict == "real":
+        score = min(score, 1.0 - conf * 0.95)
+    return {
+        "verdict": verdict,
+        "confidence": conf,
+        "explanation": explanation,
+        "stances": stances,
+        "ai_score": score,
+        "model": result.get("_model") or result.get("_source"),
+    }

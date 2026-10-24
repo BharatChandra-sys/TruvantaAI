@@ -16,6 +16,10 @@ import logging
 from typing import Optional, Any, Dict
 from datetime import timedelta
 import redis
+import threading
+import time
+from collections import OrderedDict
+from fnmatch import fnmatchcase
 from functools import wraps
 
 logger = logging.getLogger(__name__)
@@ -32,12 +36,62 @@ TTL_SHAP = 2 * 60 * 60  # 2 hours for SHAP explanations
 TTL_IMAGE = 60 * 60  # 1 hour for image analysis
 
 
+class _MemoryCache:
+    """
+    Bounded in-process cache with expiry, used whenever Redis isn't reachable,
+    so repeated checks still skip the expensive work.
+    """
+
+    def __init__(self, max_items: int = 2000):
+        self._data: "OrderedDict[str, tuple]" = OrderedDict()
+        self._lock = threading.Lock()
+        self._max = max_items
+
+    def get(self, key):
+        with self._lock:
+            item = self._data.get(key)
+            if not item:
+                return None
+            expires, value = item
+            if expires < time.time():
+                del self._data[key]
+                return None
+            self._data.move_to_end(key)
+            return value
+
+    def set(self, key, value, ttl):
+        with self._lock:
+            self._data[key] = (time.time() + ttl, value)
+            self._data.move_to_end(key)
+            while len(self._data) > self._max:
+                self._data.popitem(last=False)
+
+    def delete(self, key):
+        with self._lock:
+            self._data.pop(key, None)
+
+    def delete_pattern(self, pattern):
+        with self._lock:
+            keys = [k for k in self._data if fnmatchcase(k, pattern)]
+            for k in keys:
+                del self._data[k]
+            return len(keys)
+
+    def increment(self, key, amount, ttl=24 * 60 * 60):
+        with self._lock:
+            expires, value = self._data.get(key, (time.time() + ttl, 0))
+            value = int(value) + amount
+            self._data[key] = (expires, value)
+            return value
+
+
 class CacheManager:
-    """Manages Redis cache connections and operations"""
+    """Manages Redis cache connections and operations (in-memory fallback)"""
     
     def __init__(self):
         self.client = None
         self.enabled = REDIS_ENABLED
+        self.memory = _MemoryCache()
         
         if self.enabled:
             try:
@@ -64,7 +118,7 @@ class CacheManager:
     def get(self, key: str) -> Optional[Any]:
         """Get value from cache"""
         if not self.is_available():
-            return None
+            return self.memory.get(key)
         
         try:
             value = self.client.get(key)
@@ -78,7 +132,8 @@ class CacheManager:
     def set(self, key: str, value: Any, ttl: int = TTL_PREDICTION) -> bool:
         """Set value in cache with TTL"""
         if not self.is_available():
-            return False
+            self.memory.set(key, json.loads(json.dumps(value)), ttl)   # same copy semantics as Redis
+            return True
         
         try:
             serialized = json.dumps(value)
@@ -91,7 +146,8 @@ class CacheManager:
     def delete(self, key: str) -> bool:
         """Delete key from cache"""
         if not self.is_available():
-            return False
+            self.memory.delete(key)
+            return True
         
         try:
             self.client.delete(key)
@@ -103,7 +159,7 @@ class CacheManager:
     def delete_pattern(self, pattern: str) -> int:
         """Delete all keys matching pattern using SCAN (non-blocking, production-safe)."""
         if not self.is_available():
-            return 0
+            return self.memory.delete_pattern(pattern)
         try:
             deleted = 0
             cursor = 0
@@ -121,7 +177,7 @@ class CacheManager:
     def increment(self, key: str, amount: int = 1) -> Optional[int]:
         """Increment counter"""
         if not self.is_available():
-            return None
+            return self.memory.increment(key, amount)
         
         try:
             return self.client.incrby(key, amount)

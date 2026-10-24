@@ -126,7 +126,7 @@ def _run_pipeline_parallel(text: str, image_url: str = None, db=None):
     from app.cache import partial_cache
 
     results = {
-        "ml": None, "ai": (None, ""), "evidence": (None, [], []),
+        "ml": None, "ai": (None, ""), "evidence": (None, [], []), "grounded": None,
         "image": None, "platform": None, "inoculation": None,
     }
 
@@ -141,13 +141,28 @@ def _run_pipeline_parallel(text: str, image_url: str = None, db=None):
         r = run_ml_analysis(text)
         return r
 
-    def do_ai():
-        r = run_ai_analysis(text)
-        return r
-
-    def do_evidence():
-        r = fetch_evidence(text)
-        return r
+    def do_grounded():
+        """Search the web for evidence, then have the model judge those passages."""
+        from app.analysis.search import search_evidence, to_evidence
+        from app.analysis.ai import run_grounded_analysis
+        passages = search_evidence(text)
+        grounded = run_grounded_analysis(text, passages)
+        ev_score, urls, articles, explanation = to_evidence(passages, grounded)
+        meta = None
+        if grounded:
+            ai = (grounded["ai_score"], explanation)
+            meta = {"verdict": grounded["verdict"], "confidence": grounded["confidence"],
+                    "model": grounded.get("model")}
+        else:
+            ai = run_ai_analysis(text)       # no sources or no provider: fall back to memory
+        try:
+            partial_cache.set_ai_score(text, ai[0], ai[1])
+            if articles:
+                partial_cache.set_evidence(text, {"score": ev_score, "urls": urls,
+                                                  "articles": articles, "grounded": meta})
+        except Exception as e:
+            logger.debug("Cache set failed: %s", e)
+        return {"ai": ai, "evidence": (ev_score, urls, articles), "grounded": meta}
 
     def do_image():
         if not image_url:
@@ -183,19 +198,16 @@ def _run_pipeline_parallel(text: str, image_url: str = None, db=None):
     else:
         tasks_needed["ml"] = do_ml
 
-    if cached_ai is not None:
+    if cached_ai is not None and cached_ev is not None:
         results["ai"] = (cached_ai.get("score"), cached_ai.get("explanation", ""))
-    else:
-        tasks_needed["ai"] = do_ai
-
-    if cached_ev is not None:
+        results["grounded"] = cached_ev.get("grounded")
         results["evidence"] = (
             cached_ev.get("score"),
             cached_ev.get("urls", []),
             cached_ev.get("articles", []),
         )
     else:
-        tasks_needed["evidence"] = do_evidence
+        tasks_needed["grounded"] = do_grounded
 
     # Always run these fresh (not safe to cache)
     tasks_needed["inoculation"] = do_inoculation
@@ -210,7 +222,11 @@ def _run_pipeline_parallel(text: str, image_url: str = None, db=None):
             for future in as_completed(futures):
                 key = futures[future]
                 try:
-                    results[key] = future.result()
+                    value = future.result()
+                    if key == "grounded":
+                        results.update(value)
+                    else:
+                        results[key] = value
                 except Exception as e:
                     logger.warning("Pipeline step '%s' failed: %s", key, e)
 
@@ -282,7 +298,7 @@ def message(
             if session_id:
                 save_message(db, session_id, "assistant", reply)
             return {"is_claim": False, "session_id": session_id, "reply": reply}
-    elif not is_claim(text):
+    elif not req.check and not is_claim(text):
         reply = run_chat(text, history)
         if session_id:
             save_message(db, session_id, "assistant", reply)
@@ -451,6 +467,17 @@ def message(
         manip_score=manip_score,
     )
 
+    # A verdict reached by reading real sources outranks the style classifiers,
+    # which judge how text is written, not whether it is true.
+    grounded_meta = pipeline.get("grounded")
+    if grounded_meta:
+        if grounded_meta["verdict"] == "uncertain":
+            from app.analysis.search import reconcile
+            verdict, confidence = reconcile("uncertain", 0.5, evidence_articles or [])
+        elif grounded_meta["verdict"] != verdict:
+            verdict = grounded_meta["verdict"]
+            confidence = round(min(0.95, max(0.55, grounded_meta["confidence"])), 2)
+
     # If already debunked by fact-checkers, override to fake with high confidence
     if platform_result.get("previously_debunked") and verdict != "fake":
         verdict    = "fake"
@@ -590,56 +617,62 @@ def message(
 
     # Temporal claim tracking + velocity persistence
     claim_hash = hashlib.sha256(primary_claim.lower().strip().encode()).hexdigest()
-    try:
-        db.add(ClaimRecord(
-            claim_hash=claim_hash,
-            claim_text=primary_claim[:500],
-            verdict=verdict,
-            confidence=confidence,
-            ml_score=ml_result["fake"],
-            ai_score=ai_score,
-            evidence_score=evidence_score,
-            user_id=user.id if user else None,
-        ))
-        
-        # Store velocity record if tracking was successful
-        if velocity_metrics and cooldown_data:
-            try:
-                velocity_record = VelocityRecord(
-                    claim_hash=claim_hash,
-                    claim_text=primary_claim[:500],
-                    velocity_score=velocity_metrics.get("velocity_score", 0.0),
-                    count_5min=velocity_metrics.get("count_5min", 0),
-                    count_1hr=velocity_metrics.get("count_1hr", 0),
-                    count_24hr=velocity_metrics.get("count_24hr", 0),
-                    is_viral=velocity_metrics.get("is_viral", False),
-                    is_trending=velocity_metrics.get("is_trending", False),
-                    cooldown_score=cooldown_data.get("cooldown_score"),
-                    cooldown_level=cooldown_data.get("cooldown_level"),
-                )
-                
-                # Add clustering data (Phase 2.5) if available
-                if cluster_data and cluster_data.get("cluster_id") is not None:
-                    velocity_record.cluster_id = cluster_data.get("cluster_id")
-                    velocity_record.cluster_size = cluster_data.get("cluster_size")
-                    velocity_record.campaign_score = cluster_data.get("campaign_score")
-                    velocity_record.is_coordinated = cluster_data.get("is_coordinated_campaign", False)
-                
-                db.add(velocity_record)
-            except Exception as ve:
-                logger.warning("Velocity record creation failed: %s", ve)
-        
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        logger.warning("Claim/velocity record persistence failed: %s", e)
 
-    # Check if this claim has been seen before with a different verdict
+    # Has this claim been seen before with a different verdict? (needed in the response)
     prior = db.query(ClaimRecord).filter(
         ClaimRecord.claim_hash == claim_hash,
         ClaimRecord.verdict != verdict,
     ).count()
     verdict_changed = prior > 0
+
+    records = [ClaimRecord(
+        claim_hash=claim_hash,
+        claim_text=primary_claim[:500],
+        verdict=verdict,
+        confidence=confidence,
+        ml_score=ml_result["fake"],
+        ai_score=ai_score,
+        evidence_score=evidence_score,
+        user_id=user.id if user else None,
+    )]
+    if velocity_metrics and cooldown_data:
+        try:
+            velocity_record = VelocityRecord(
+                claim_hash=claim_hash,
+                claim_text=primary_claim[:500],
+                velocity_score=velocity_metrics.get("velocity_score", 0.0),
+                count_5min=velocity_metrics.get("count_5min", 0),
+                count_1hr=velocity_metrics.get("count_1hr", 0),
+                count_24hr=velocity_metrics.get("count_24hr", 0),
+                is_viral=velocity_metrics.get("is_viral", False),
+                is_trending=velocity_metrics.get("is_trending", False),
+                cooldown_score=cooldown_data.get("cooldown_score"),
+                cooldown_level=cooldown_data.get("cooldown_level"),
+            )
+            if cluster_data and cluster_data.get("cluster_id") is not None:
+                velocity_record.cluster_id = cluster_data.get("cluster_id")
+                velocity_record.cluster_size = cluster_data.get("cluster_size")
+                velocity_record.campaign_score = cluster_data.get("campaign_score")
+                velocity_record.is_coordinated = cluster_data.get("is_coordinated_campaign", False)
+            records.append(velocity_record)
+        except Exception as ve:
+            logger.warning("Velocity record creation failed: %s", ve)
+
+    # The response doesn't depend on these writes, so they happen after it,
+    # off the request path (each remote commit is a network round trip).
+    def _persist_records(rows=records):
+        from database import SessionLocal
+        session = SessionLocal()
+        try:
+            session.add_all(rows)
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            logger.warning("Claim/velocity record persistence failed: %s", e)
+        finally:
+            session.close()
+
+    threading.Thread(target=_persist_records, daemon=True, name="claim-write").start()
 
     # stance_summary already computed above before cooldown block
 

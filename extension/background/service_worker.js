@@ -15,13 +15,11 @@
  *  - Message relay from content script
  */
 
-// ── Backend URL (reads from storage if overridden in settings) ────────────────
-// Default points to production Render deployment
-let API_BASE = "https://factcheckai-gjrk.onrender.com";
-
-chrome.storage.local.get("apiBase", ({ apiBase }) => {
-  if (apiBase) API_BASE = apiBase;
-});
+// ── Backend URL: shared with the popup pages via env.js ───────────────────────
+importScripts("../env.js");
+let API_BASE = TRUVANTA_API;
+// Chrome may stop an extension worker whose fetch runs past 30s, so give up first.
+const API_TIMEOUT_MS = 28000;
 
 // ── Keep-alive ────────────────────────────────────────────────────────────────
 function pingBackend() {
@@ -145,17 +143,33 @@ function notify(message) {
   });
 }
 
+/**
+ * Ask the page's content script to show the in-page check card.
+ * Resolves false when there is no content script (e.g. chrome:// pages,
+ * the Web Store, or tabs opened before the extension was installed).
+ */
+async function checkInPage(tabId, text) {
+  if (!tabId) return false;
+  try {
+    const res = await chrome.tabs.sendMessage(tabId, { type: "TRUVANTA_CHECK", text });
+    return !!res?.ok;
+  } catch {
+    return false;
+  }
+}
+
 // ── Context menu ──────────────────────────────────────────────────────────────
-chrome.contextMenus.onClicked.addListener((info) => {
+chrome.contextMenus.onClicked.addListener(async (info, tab) => {
   if (info.menuItemId === "analyze-fake-news") {
-    openPopupWithText(info.selectionText || "");
+    const text = info.selectionText || "";
+    if (!(await checkInPage(tab?.id, text))) openPopupWithText(text);
   }
 });
 
 // ── Keyboard shortcuts ────────────────────────────────────────────────────────
 chrome.commands.onCommand.addListener(async (command) => {
   // Ctrl+Shift+Y — just open the popup
-  if (command === "open-Truvantaer") {
+  if (command === "open-factchecker") {
     openPopupWithText("");
     return;
   }
@@ -167,7 +181,7 @@ chrome.commands.onCommand.addListener(async (command) => {
     if (!tab?.id) { openPopupWithText(""); return; }
     const text = await getSelectedTextFromPage(tab.id);
     if (text) {
-      openPopupWithText(text);
+      if (!(await checkInPage(tab.id, text))) openPopupWithText(text);
     } else {
       notify("No text selected. Select some text on the page first.");
       openPopupWithText("");
@@ -188,6 +202,109 @@ chrome.commands.onCommand.addListener(async (command) => {
   }
 });
 
+/**
+ * Make a backend request on behalf of the in-page card. Content scripts
+ * can't call the backend directly: their requests carry the website's
+ * origin, which the backend's CORS policy (rightly) rejects.
+ */
+async function proxyApi({ path, method = "POST", body }) {
+  if (typeof path !== "string" || !path.startsWith("/")) return { ok: false, error: "bad_request" };
+  const { token } = await chrome.storage.local.get("token");
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        "X-Client": "extension-content",
+        "X-Client-Version": chrome.runtime.getManifest().version,
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: controller.signal,
+    });
+    let data = null;
+    try { data = await res.json(); } catch { /* empty or non-JSON body */ }
+    return { ok: res.ok, status: res.status, data };
+  } catch (err) {
+    return { ok: false, error: err.name === "AbortError" ? "timeout" : "network" };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * Real-time check for the in-page card. The card opens a port, sends the
+ * claim, and receives each Server-Sent Event from /check/stream as it
+ * arrives (sources, an early fact-check match, then the verdict).
+ * Closing the card disconnects the port, which cancels the request.
+ */
+const STREAM_IDLE_MS = 25000;  // no bytes for this long → give up (Chrome's limit is 30s)
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== "truvanta-check") return;
+  const controller = new AbortController();
+  let open = true;
+  let idleTimer = null;
+  const send = (msg) => { if (open) { try { port.postMessage(msg); } catch { open = false; } } };
+  const resetIdle = () => {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(() => { send({ event: "network_error", reason: "timeout" }); controller.abort(); }, STREAM_IDLE_MS);
+  };
+  port.onDisconnect.addListener(() => { open = false; clearTimeout(idleTimer); controller.abort(); });
+
+  port.onMessage.addListener(async (msg) => {
+    if (msg?.type !== "START" || typeof msg.text !== "string") return;
+    resetIdle();
+    try {
+      const { token } = await chrome.storage.local.get("token");
+      const res = await fetch(`${API_BASE}/check/stream`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "text/event-stream",
+          "X-Client": "extension-content",
+          "X-Client-Version": chrome.runtime.getManifest().version,
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ message: msg.text, check: true }),
+        signal: controller.signal,
+      });
+      if (!res.ok || !res.body) {
+        send({ event: "http_error", status: res.status });
+        return;
+      }
+      const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+      let buffer = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        resetIdle();
+        buffer += value.replace(/\r\n/g, "\n");
+        let split;
+        while ((split = buffer.indexOf("\n\n")) >= 0) {
+          const block = buffer.slice(0, split);
+          buffer = buffer.slice(split + 2);
+          let event = "message";
+          const data = [];
+          for (const line of block.split("\n")) {
+            if (line.startsWith("event:")) event = line.slice(6).trim();
+            else if (line.startsWith("data:")) data.push(line.slice(5).trimStart());
+          }
+          if (!data.length) continue;
+          try { send({ event, data: JSON.parse(data.join("\n")) }); } catch { /* malformed event */ }
+        }
+      }
+      send({ event: "end" });
+    } catch (err) {
+      if (err.name !== "AbortError") send({ event: "network_error", reason: "network" });
+    } finally {
+      clearTimeout(idleTimer);
+    }
+  });
+});
+
 // ── Messages from content script / popup ─────────────────────────────────────
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   switch (message.type) {
@@ -203,15 +320,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       pingBackend();
       return false;
 
+    case "TRUVANTA_API":
+      proxyApi(message).then(sendResponse);
+      return true;  // async sendResponse — keeps the worker alive until it answers
+
     case "GET_API_BASE":
       sendResponse({ apiBase: API_BASE });
       return true;  // async sendResponse — keep channel open
 
     case "SET_API_BASE":
-      if (message.apiBase) {
-        API_BASE = message.apiBase;
-        chrome.storage.local.set({ apiBase: API_BASE });
-      }
+      // Runtime override for this session only; env.js stays the default.
+      if (message.apiBase) API_BASE = message.apiBase;
       return false;
   }
   return false;

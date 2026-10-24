@@ -390,6 +390,8 @@ app.include_router(ab_router)
 app.include_router(metrics_router)
 app.include_router(websocket_router)
 app.include_router(cache_router)
+from app.routes.stream_routes import router as stream_router
+app.include_router(stream_router)   # POST /check/stream (real-time check)
 app.include_router(quota_router)
 app.include_router(analytics_router)
 app.include_router(audio_router)
