@@ -8,9 +8,9 @@
 //
 //   true  → http://127.0.0.1:8000   (run the backend with uvicorn first)
 //   false → Render production       (use this before building the ZIP)
-const USE_LOCAL_BACKEND = true;
+const USE_LOCAL_BACKEND = false;
 
-const TRUVANTA_PROD_API = "https://factcheckai-gjrk.onrender.com";
+const TRUVANTA_PROD_API = "https://factcheckai-coq3.onrender.com";
 // 127.0.0.1, not localhost: on Windows "localhost" tries IPv6 first and can stall.
 const TRUVANTA_LOCAL_API = "http://127.0.0.1:8000";
 const TRUVANTA_API = USE_LOCAL_BACKEND ? TRUVANTA_LOCAL_API : TRUVANTA_PROD_API;

@@ -8,7 +8,7 @@
 const _REVIEW_API = (function () {
   // Try to use the API constant from config.js if available, else fallback to production
   if (typeof API !== "undefined") return API;
-  return "https://factcheckai-gjrk.onrender.com";
+  return "https://factcheckai-coq3.onrender.com";
 })();
 
 async function _reviewFetch(path, opts = {}) {

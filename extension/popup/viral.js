@@ -7,7 +7,7 @@
 
 // Safety fallback in case config.js didn't load
 if (typeof apiFetch === "undefined") {
-  const _API = (typeof API !== "undefined") ? API : "https://factcheckai-gjrk.onrender.com";
+  const _API = (typeof API !== "undefined") ? API : "https://factcheckai-coq3.onrender.com";
   window.apiFetch = async (path, opts = {}) => fetch(_API + path, opts);
   window.buildHeaders = (extra = {}) => extra;
   window.readJsonSafe = async (res) => { try { return await res.json(); } catch { return null; } };

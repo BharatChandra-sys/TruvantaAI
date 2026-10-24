@@ -43,7 +43,7 @@ class WebSocketManager {
     
     try {
       // Get WebSocket URL from config
-      const API_BASE_URL = typeof API !== 'undefined' ? API : 'https://factcheckai-gjrk.onrender.com';
+  const API_BASE_URL = typeof API !== 'undefined' ? API : 'https://factcheckai-coq3.onrender.com';
       const wsUrl = API_BASE_URL.replace('http://', 'ws://').replace('https://', 'wss://');
       
       // Build connection URL with auth

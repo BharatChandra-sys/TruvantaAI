@@ -10,7 +10,7 @@
 // Import local inference (will be added via importScripts)
 // importScripts('onnx_inference.js');
 
-const API = "https://factcheckai-gjrk.onrender.com";  // Production backend
+const API = "https://factcheckai-coq3.onrender.com";  // Production backend
 const LOCAL_INFERENCE_ENABLED = true; // Toggle for local inference
 const INFERENCE_TIMEOUT = 500; // 500ms timeout for local inference
 
