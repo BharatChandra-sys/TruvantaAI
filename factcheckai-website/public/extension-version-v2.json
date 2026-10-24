@@ -1,20 +1,21 @@
 {
-  "version": "2.0.0",
-  "build_date": "2026-09-27",
-  "changes": [
-    "Fixed inline chat claim detection - now properly shows verdict and scores for claims",
-    "Fixed history page stuck on loading - sessions now load correctly",
-    "Changed API endpoint from /chat/message to /message (correct endpoint)",
-    "Added proper handling for both claim analysis and conversational chat",
-    "Exported config.js helper functions to global scope for cross-script access"
+  "version": "2.6.2",
+  "downloadUrl": "/truvanta-v2.6.2.zip",
+  "releaseDate": "2026-10-24",
+  "changelog": [
+    "Real-time streaming fact-checking with Server-Sent Events",
+    "Progressive results display (sources appear as found)",
+    "Early fact-check matches show in ~1 second",
+    "Full verdict in 4.5s for fresh claims, instant for cached",
+    "Fixed 2-second localhost stall on Windows",
+    "Dynamic AI model discovery (no more hardcoded models)",
+    "Self-healing model registry with automatic failover",
+    "Fixed verdict contradicting evidence bug",
+    "Fixed citation numbering mismatches"
   ],
-  "backend_url": "https://factcheckai-gjrk.onrender.com",
-  "fixes": {
-    "issue_1": "Inline chat now detects claims and shows verdict/confidence/sources",
-    "issue_2": "History page loads chat sessions instead of being stuck on 'Loading...'"
-  },
-  "files_modified": [
-    "extension/popup/config.js",
-    "extension/content.js"
-  ]
+  "minimumBrowserVersion": {
+    "chrome": "88",
+    "edge": "88",
+    "brave": "1.20"
+  }
 }
