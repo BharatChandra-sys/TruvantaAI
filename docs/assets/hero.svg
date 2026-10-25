@@ -1,0 +1,146 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="480" viewBox="0 0 1200 480" fill="none" role="img" aria-label="Truvanta. Know what's true. A claim is highlighted on a web page and Truvanta returns a sourced verdict with a cited explanation.">
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Helvetica, Arial, sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+    /* One 9-second loop: idle, highlight, card, sources, verdict, explanation, hold, reset */
+    .hl      { transform-box: fill-box; transform-origin: left center; animation: sweep 9s cubic-bezier(.77,0,.175,1) infinite; }
+    .card    { animation: card 9s cubic-bezier(.32,.72,0,1) infinite; }
+    .search  { animation: search 9s ease-out infinite; }
+    .pulse   { animation: pulse 1.2s ease-in-out infinite; }
+    .row1    { animation: row1 9s cubic-bezier(.23,1,.32,1) infinite; }
+    .row2    { animation: row2 9s cubic-bezier(.23,1,.32,1) infinite; }
+    .row3    { animation: row3 9s cubic-bezier(.23,1,.32,1) infinite; }
+    .verdict { animation: verdict 9s cubic-bezier(.23,1,.32,1) infinite; }
+    .ex1     { animation: ex1 9s cubic-bezier(.23,1,.32,1) infinite; }
+    .ex2     { animation: ex2 9s cubic-bezier(.23,1,.32,1) infinite; }
+    .fill    { transform-box: fill-box; transform-origin: left center; animation: fill 9s cubic-bezier(.23,1,.32,1) infinite; }
+    .count   { animation: verdict 9s cubic-bezier(.23,1,.32,1) infinite; }
+    .checking{ animation: search 9s ease-out infinite; }
+
+    @keyframes sweep   { 0%,8% { transform: scaleX(0); } 18%,90% { transform: scaleX(1); } 97%,100% { transform: scaleX(0); } }
+    @keyframes card    { 0%,20% { opacity: 0; transform: translateY(16px); } 27%,90% { opacity: 1; transform: translateY(0); } 97%,100% { opacity: 0; transform: translateY(8px); } }
+    @keyframes search  { 0%,22% { opacity: 0; } 25%,40% { opacity: 1; } 43%,100% { opacity: 0; } }
+    @keyframes pulse   { 0%,100% { opacity: .3; } 50% { opacity: 1; } }
+    @keyframes row1    { 0%,29% { opacity: 0; transform: translateY(6px); } 32%,90% { opacity: 1; transform: translateY(0); } 97%,100% { opacity: 0; } }
+    @keyframes row2    { 0%,33% { opacity: 0; transform: translateY(6px); } 36%,90% { opacity: 1; transform: translateY(0); } 97%,100% { opacity: 0; } }
+    @keyframes row3    { 0%,37% { opacity: 0; transform: translateY(6px); } 40%,90% { opacity: 1; transform: translateY(0); } 97%,100% { opacity: 0; } }
+    @keyframes verdict { 0%,42% { opacity: 0; transform: translateY(4px); } 46%,90% { opacity: 1; transform: translateY(0); } 97%,100% { opacity: 0; } }
+    @keyframes ex1     { 0%,48% { opacity: 0; transform: translateY(4px); } 52%,90% { opacity: 1; transform: translateY(0); } 97%,100% { opacity: 0; } }
+    @keyframes ex2     { 0%,52% { opacity: 0; transform: translateY(4px); } 56%,90% { opacity: 1; transform: translateY(0); } 97%,100% { opacity: 0; } }
+    @keyframes fill    { 0%,44% { transform: scaleX(0); } 54%,90% { transform: scaleX(.96); } 97%,100% { transform: scaleX(0); } }
+
+    @media (prefers-reduced-motion: reduce) {
+      .hl, .fill { animation: none; transform: scaleX(1); }
+      .card, .row1, .row2, .row3, .verdict, .ex1, .ex2, .count { animation: none; opacity: 1; }
+      .search, .checking { animation: none; opacity: 0; }
+    }
+  </style>
+
+  <defs>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="18" stdDeviation="18" flood-color="#000" flood-opacity=".55"/>
+    </filter>
+    <symbol id="mark" viewBox="0 0 40 31">
+      <path d="M11.6 9.6V24.6C11.6 27.5 13.2 29.2 16.2 29.2" stroke="#ededef" stroke-width="4"/>
+      <path d="M10.4 9.4 19.4 20.6 33.6 7.4" stroke="#17171a" stroke-width="6.6" stroke-linejoin="round"/>
+      <path d="M10.4 9.4 19.4 20.6 33.6 7.4" stroke="#ffc53d" stroke-width="4.2" stroke-linejoin="round"/>
+      <path d="M0.4 11.4C1.8 5.6 4.6 2.4 9.6 2.4H32.4L26 9.2H10.6C6.4 9.2 3 9.9 0.4 11.4Z" fill="#ededef"/>
+      <path d="M0.4 11.4C1.8 5.6 4.6 2.4 9.6 2.4H12.4C8.2 3 5.6 5.4 4.4 9.6 2.8 10 1.4 10.6 0.4 11.4Z" fill="#ffc53d"/>
+    </symbol>
+    <symbol id="mark-px" viewBox="0 0 40 31">
+      <use href="#mark"/>
+      <g fill="#ffc53d">
+        <rect x="37.2" y="0.2" width="2.7" height="2.7" rx=".5"/>
+        <rect x="34.2" y="3" width="1.9" height="1.9" rx=".4"/>
+        <rect x="36.3" y="5.8" width="2.1" height="2.1" rx=".4"/>
+        <rect x="34.8" y="10.2" width="2" height="2" rx=".4" fill-opacity=".55"/>
+      </g>
+    </symbol>
+  </defs>
+
+  <rect width="1200" height="480" rx="24" fill="#0a0a0b"/>
+  <rect x=".5" y=".5" width="1199" height="479" rx="23.5" stroke="#ffffff" stroke-opacity=".08"/>
+
+  <!-- Left: brand and promise -->
+  <use href="#mark-px" x="64" y="102" width="66" height="51"/>
+  <text x="64" y="226" fill="#ededef" font-size="54" font-weight="600" letter-spacing="-2">Know what&#8217;s true.</text>
+  <text x="64" y="272" fill="#a1a1aa" font-size="19">Highlight any claim on the web. Truvanta checks it</text>
+  <text x="64" y="300" fill="#a1a1aa" font-size="19">against live sources and shows its evidence.</text>
+  <text x="64" y="364" fill="#6b6b73" font-size="13" class="mono">FREE  &#183;  OPEN SOURCE  &#183;  CHROME, EDGE, BRAVE</text>
+
+  <!-- Right: a page with a claim being checked -->
+  <g>
+    <rect x="600" y="48" width="552" height="384" rx="18" fill="#111113"/>
+    <rect x="600.5" y="48.5" width="551" height="383" rx="17.5" stroke="#ffffff" stroke-opacity=".08"/>
+    <path d="M600 84h552" stroke="#ffffff" stroke-opacity=".08"/>
+    <rect x="756" y="56" width="240" height="20" rx="6" fill="#0a0a0b" fill-opacity=".7"/>
+    <text x="876" y="70" fill="#6b6b73" font-size="11" text-anchor="middle" class="mono">news.example.com/space-myths</text>
+
+    <text x="632" y="122" fill="#ededef" font-size="19" font-weight="600" letter-spacing="-.4">Five things people get wrong about space</text>
+    <text x="632" y="156" fill="#a1a1aa" font-size="14.5">Astronauts often describe the view from orbit as humbling.</text>
+    <rect class="hl" x="630" y="167" width="356" height="24" rx="4" fill="#ffc53d" fill-opacity=".26"/>
+    <text x="632" y="184" fill="#ededef" font-size="14.5">The Great Wall of China is visible from the Moon,</text>
+    <text x="632" y="212" fill="#a1a1aa" font-size="14.5">according to a popular travel guide.</text>
+    <rect x="632" y="234" width="250" height="7" rx="3.5" fill="#1f1f23"/>
+    <rect x="632" y="254" width="200" height="7" rx="3.5" fill="#1f1f23"/>
+    <rect x="632" y="274" width="230" height="7" rx="3.5" fill="#1f1f23"/>
+    <rect x="632" y="294" width="170" height="7" rx="3.5" fill="#1f1f23"/>
+    <rect x="632" y="314" width="210" height="7" rx="3.5" fill="#1f1f23"/>
+  </g>
+
+  <!-- The Truvanta card -->
+  <g class="card" filter="url(#shadow)">
+   <g transform="translate(16 40)">
+    <rect x="764" y="176" width="364" height="240" rx="14" fill="#17171a"/>
+    <rect x="764.5" y="176.5" width="363" height="239" rx="13.5" stroke="#ffffff" stroke-opacity=".07"/>
+    <use href="#mark" x="782" y="192" width="18" height="14"/>
+    <text x="808" y="204" fill="#ededef" font-size="13" font-weight="600">Truvanta</text>
+    <text class="checking mono" x="1110" y="204" fill="#6b6b73" font-size="11" text-anchor="end">checking&#8230;</text>
+    <text class="count mono" x="1110" y="204" fill="#6b6b73" font-size="11" text-anchor="end">3 sources</text>
+
+    <!-- searching state -->
+    <g class="search">
+      <circle class="pulse" cx="786" cy="230" r="3" fill="#a1a1aa"/>
+      <text x="796" y="234" fill="#a1a1aa" font-size="12">Searching sources</text>
+    </g>
+
+    <!-- verdict state -->
+    <g class="verdict">
+      <rect x="782" y="218" width="60" height="22" rx="11" fill="#ff6166" fill-opacity=".14"/>
+      <circle cx="795" cy="229" r="3" fill="#ff6166"/>
+      <text x="803" y="233" fill="#ff6166" font-size="12" font-weight="500">False</text>
+      <text x="1110" y="233" fill="#a1a1aa" font-size="11.5" text-anchor="end" class="mono">96% confidence</text>
+    </g>
+    <rect x="782" y="250" width="328" height="3" rx="1.5" fill="#1f1f23"/>
+    <rect class="fill" x="782" y="250" width="328" height="3" rx="1.5" fill="#ff6166"/>
+
+    <!-- explanation, written from the sources and cited -->
+    <text class="ex1" x="782" y="275" fill="#ededef" font-size="12.5">Astronauts report the wall can&#8217;t be seen with</text>
+    <text class="ex2" x="782" y="293" fill="#ededef" font-size="12.5">the naked eye, even from low orbit<tspan fill="#ffc53d" class="mono" font-size="11"> [1][2]</tspan><tspan fill="#ededef">.</tspan></text>
+
+    <!-- sources, arriving one by one -->
+    <g class="row1">
+      <rect x="782" y="308" width="328" height="28" rx="7" fill="#0a0a0b" fill-opacity=".55"/>
+      <rect x="792" y="314" width="16" height="16" rx="4" fill="#1f1f23"/>
+      <text x="800" y="326" fill="#a1a1aa" font-size="9.5" font-weight="600" text-anchor="middle">1</text>
+      <text x="818" y="326" fill="#ededef" font-size="12">Snopes</text>
+      <text x="1100" y="326" fill="#6b6b73" font-size="11" text-anchor="end" class="mono">rated False</text>
+    </g>
+    <g class="row2">
+      <rect x="782" y="342" width="328" height="28" rx="7" fill="#0a0a0b" fill-opacity=".55"/>
+      <rect x="792" y="348" width="16" height="16" rx="4" fill="#1f1f23"/>
+      <text x="800" y="360" fill="#a1a1aa" font-size="9.5" font-weight="600" text-anchor="middle">2</text>
+      <text x="818" y="360" fill="#ededef" font-size="12">Scientific American</text>
+      <text x="1100" y="360" fill="#6b6b73" font-size="11" text-anchor="end" class="mono">scientificamerican.com</text>
+    </g>
+    <g class="row3">
+      <rect x="782" y="376" width="328" height="28" rx="7" fill="#0a0a0b" fill-opacity=".55"/>
+      <rect x="792" y="382" width="16" height="16" rx="4" fill="#1f1f23"/>
+      <text x="800" y="394" fill="#a1a1aa" font-size="9.5" font-weight="600" text-anchor="middle">3</text>
+      <text x="818" y="394" fill="#ededef" font-size="12">Wikipedia</text>
+      <text x="1100" y="394" fill="#6b6b73" font-size="11" text-anchor="end" class="mono">en.wikipedia.org</text>
+    </g>
+   </g>
+  </g>
+</svg>
