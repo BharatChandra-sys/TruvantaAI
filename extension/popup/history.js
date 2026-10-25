@@ -78,7 +78,7 @@ function render() {
         <div class="list-item-title">${esc(s.title)}</div>
         <div class="list-item-meta">${new Date(s.updated_at).toLocaleDateString()}</div>
       </div>
-      <button class="icon-btn s-del" style="flex-shrink:0">
+      <button class="icon-btn s-del" style="flex-shrink:0" aria-label="Delete chat" title="Delete chat">
         <span class="material-symbols-outlined ms-16">delete</span>
       </button>`;
     el.querySelector(".s-open").addEventListener("click", () => openSession(s.id));

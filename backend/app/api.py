@@ -154,7 +154,12 @@ def _run_pipeline_parallel(text: str, image_url: str = None, db=None):
             meta = {"verdict": grounded["verdict"], "confidence": grounded["confidence"],
                     "model": grounded.get("model")}
         else:
-            ai = run_ai_analysis(text)       # no sources or no provider: fall back to memory
+            # No sources or no model: decide from published fact-checks only, never from memory.
+            from app.analysis.search import verdict_without_model
+            v, conf, why = verdict_without_model(passages, articles)
+            ai = ({"fake": 0.85, "real": 0.15}.get(v, 0.5), why)
+            explanation = why
+            meta = {"verdict": v, "confidence": conf, "model": None}
         try:
             partial_cache.set_ai_score(text, ai[0], ai[1])
             if articles:
@@ -798,6 +803,7 @@ def message(
                 "ai_score": ai_score,
                 "explanation": explanation,
                 "evidence": display_evidence,
+                "evidence_articles": evidence_articles,
             })
         except Exception as e:
             logger.warning("Failed to save assistant message: %s", e)

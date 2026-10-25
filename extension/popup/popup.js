@@ -33,6 +33,13 @@ document.getElementById("nav-saved").addEventListener("click",     () => { windo
 document.getElementById("nav-history").addEventListener("click",   () => { window.location.href = chrome.runtime.getURL("popup/history.html"); });
 document.getElementById("nav-settings").addEventListener("click",  () => { window.location.href = chrome.runtime.getURL("popup/settings.html"); });
 
+// Sidebar links are anchors without href: make Enter / Space activate them.
+document.querySelectorAll(".sidebar-nav a").forEach(a => {
+  a.addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); a.click(); }
+  });
+});
+
 // ── Init ──────────────────────────────────────────────────────
 // Show spinner immediately — before any async work
 chatContainer.innerHTML = `
@@ -107,36 +114,96 @@ function closeSidebar() {
 }
 
 // ── Sessions ──────────────────────────────────────────────────
-async function loadSessions() {
+let sessionsState = "loading";   // "loading" | "ready" | "error"
+let _loadToken = 0;              // guards against out-of-order message loads
+
+async function loadSessions(quiet = false) {
+  if (!quiet) { sessionsState = "loading"; renderSessions(); }
   try {
     const res = await authFetch("/history/sessions");
-    if (!res.ok) return;
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await readJsonSafe(res) || {};
     // Handle both paginated {sessions, total} and legacy array response
     sessions = Array.isArray(data) ? data : (data.sessions || []);
-    renderSessions();
-  } catch(_) {}
+    sessionsState = "ready";
+  } catch (e) {
+    console.error("[Truvanta] Failed to load sessions:", e);
+    sessionsState = sessions.length ? "ready" : "error";
+  }
+  renderSessions();
+}
+
+// "2h ago", "Yesterday", "Mar 4". The API sends naive UTC timestamps.
+function relativeDate(iso) {
+  if (!iso) return "";
+  const t = new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? iso : iso + "Z");
+  if (isNaN(t)) return "";
+  const min = Math.floor((Date.now() - t.getTime()) / 60000);
+  if (min < 1) return "Just now";
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.floor(hr / 24);
+  if (day === 1) return "Yesterday";
+  if (day < 7) return `${day}d ago`;
+  return t.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function renderSessions() {
   const list = document.getElementById("sessions-list");
   if (!list) return;
   list.innerHTML = "";
-  if (!sessions.length) {
-    const p = document.createElement("p");
-    p.style.cssText = "font-size:11px;color:var(--t3);padding:8px 10px;";
-    p.textContent = "No chats yet";
-    list.appendChild(p);
+
+  if (sessionsState === "loading" && !sessions.length) {
+    list.setAttribute("aria-busy", "true");
+    list.innerHTML = [72, 55, 84, 63, 48].map(w =>
+      `<div class="session-skel"><span class="skel" style="width:${w}%"></span><span class="skel" style="width:28%;height:6px"></span></div>`
+    ).join("");
     return;
   }
+  list.removeAttribute("aria-busy");
+
+  if (sessionsState === "error") {
+    const box = document.createElement("div");
+    box.className = "side-state";
+    box.innerHTML = `
+      <p class="side-state-title">Couldn't load your chats</p>
+      <p class="side-state-sub">Check your connection and try again.</p>
+      <button class="state-btn" id="sessions-retry">Retry</button>`;
+    list.appendChild(box);
+    box.querySelector("#sessions-retry").addEventListener("click", () => loadSessions());
+    return;
+  }
+
+  if (!sessions.length) {
+    const box = document.createElement("div");
+    box.className = "side-state";
+    box.innerHTML = `
+      <p class="side-state-title">No chats yet</p>
+      <p class="side-state-sub">Paste a claim or ask a question and it will show up here.</p>`;
+    list.appendChild(box);
+    return;
+  }
+
   sessions.forEach(s => {
+    const active = s.id === currentSessionId;
     const div = document.createElement("div");
-    div.className = "session-item" + (s.id === currentSessionId ? " active" : "");
+    div.className = "session-item" + (active ? " active" : "");
+    div.tabIndex = 0;
+    div.setAttribute("role", "button");
+    if (active) div.setAttribute("aria-current", "true");
+    div.title = s.title || "";
     div.innerHTML = `
-      <span class="material-symbols-outlined ms-14" style="color:var(--t3);flex-shrink:0">chat_bubble</span>
-      <span class="s-title">${esc(s.title)}</span>
-      <button class="session-del"><span class="material-symbols-outlined ms-12">delete</span></button>`;
+      <span class="s-main">
+        <span class="s-title">${esc(s.title || "New chat")}</span>
+        <span class="s-date">${esc(relativeDate(s.updated_at || s.created_at))}</span>
+      </span>
+      <button class="session-del" aria-label="Delete chat" title="Delete chat"><span class="material-symbols-outlined ms-14">delete</span></button>`;
     div.addEventListener("click", () => switchSession(s.id));
+    div.addEventListener("keydown", e => {
+      if (e.target !== div) return;
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); switchSession(s.id); }
+    });
     div.querySelector(".session-del").addEventListener("click", e => {
       e.stopPropagation(); deleteSession(s.id);
     });
@@ -150,14 +217,33 @@ async function switchSession(id) {
   closeSidebar();
   const s = sessions.find(x => x.id === id);
   if (s) setChatTitle(s.title);
-  chatContainer.innerHTML = "";
-  await loadSessionMessages(id);
   renderSessions();
+  await loadSessionMessages(id);
+}
+
+function showChatState(kind, title, sub, retry) {
+  chatContainer.innerHTML = "";
+  const box = document.createElement("div");
+  box.className = "chat-state";
+  box.innerHTML = `
+    <div class="chat-state-icon"><span class="material-symbols-outlined ms-20">${kind === "error" ? "warning" : "chat"}</span></div>
+    <p class="chat-state-title">${esc(title)}</p>
+    <p class="chat-state-sub">${esc(sub)}</p>
+    ${retry ? `<button class="state-btn" id="chat-retry">Try again</button>` : ""}`;
+  chatContainer.appendChild(box);
+  if (retry) box.querySelector("#chat-retry").addEventListener("click", retry);
+}
+
+// The history API returns { messages: [...], total, limit, offset }.
+// Older builds returned a bare array; accept both.
+function extractMessages(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (payload && Array.isArray(payload.messages)) return payload.messages;
+  return null;
 }
 
 async function loadSessionMessages(sessionId) {
-  console.log(`[TruvantaAI] Loading session messages for ID: ${sessionId}`);
-  // Show skeleton while loading
+  const mine = ++_loadToken;
   chatContainer.innerHTML = `
     <div class="skeleton-wrap">
       <div class="skeleton-line" style="width:60%"></div>
@@ -172,40 +258,47 @@ async function loadSessionMessages(sessionId) {
       <div class="skeleton-line" style="width:90%"></div>
     </div>`;
   try {
-    const res = await authFetch(`/history/sessions/${sessionId}/messages`);
-    console.log(`[TruvantaAI] Session messages response:`, res.status, res.ok);
-    if (!res.ok) { 
-      console.error(`[TruvantaAI] Failed to load session messages: ${res.status}`);
-      showWelcome(); 
-      return; 
+    const res = await authFetch(`/history/sessions/${sessionId}/messages?limit=200`);
+    if (mine !== _loadToken) return;             // user opened another chat meanwhile
+    if (res.status === 404) {                    // chat was deleted elsewhere
+      currentSessionId = null;
+      chrome.storage.local.remove("currentSessionId");
+      setChatTitle("Truvanta");
+      showWelcome();
+      loadSessions(true);
+      return;
     }
-    const msgs = await readJsonSafe(res) || [];
-    console.log(`[TruvantaAI] Loaded ${msgs.length} messages`);
-    if (!msgs.length) { 
-      console.warn(`[TruvantaAI] Session has no messages, showing welcome`);
-      showWelcome(); 
-      return; 
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const msgs = extractMessages(await readJsonSafe(res));
+    if (mine !== _loadToken) return;
+    if (!msgs) throw new Error("Unexpected response shape");
+    history = [];
+    if (!msgs.length) {
+      showChatState("empty", "This chat is empty", "Send a message or paste a claim to get started.");
+      return;
     }
     chatContainer.innerHTML = "";
-    history = [];
+    let lastUserText = "";
     msgs.forEach(m => {
       if (m.role === "user") {
         addUserMsg(m.content, false);
+        lastUserText = m.content;
         history.push({ role: "user", content: m.content });
+      } else if (m.is_claim) {
+        const card = normalizeMessageResponse({ ...m, primary_claim: lastUserText });
+        addFactCard(card, false, false);
       } else {
-        if (m.is_claim) {
-          addFactCard(m, false, false);
-        } else {
-          addChatReply(m.content, false, false);
-          history.push({ role: "assistant", content: m.content });
-        }
+        addChatReply(m.content, false, false);
+        history.push({ role: "assistant", content: m.content });
       }
     });
+    if (history.length > 20) history = history.slice(-20);
     scrollBottom();
-    console.log(`[TruvantaAI] Session loaded successfully with ${history.length} history items`);
-  } catch(e) { 
-    console.error(`[TruvantaAI] Error loading session:`, e);
-    showWelcome(); 
+  } catch (e) {
+    if (mine !== _loadToken) return;
+    console.error("[Truvanta] Error loading session:", e);
+    showChatState("error", "Couldn't open this chat", "We couldn't load its messages. Check your connection and try again.",
+      () => loadSessionMessages(sessionId));
   }
 }
 
@@ -213,7 +306,7 @@ async function newChat() {
   currentSessionId = null;
   history = [];
   chrome.storage.local.remove("currentSessionId");
-  setChatTitle("TruvantaAI");
+  setChatTitle("Truvanta");
   chatContainer.innerHTML = "";
   showWelcome();
   closeSidebar();
@@ -233,13 +326,13 @@ function showWelcome() {
   const wrap = document.createElement("div");
   wrap.className = "welcome-screen";
   wrap.innerHTML = `
-    <img src="../icons/logo.png" alt="" class="welcome-logo-img" style="width:56px;height:56px;object-fit:contain;margin-bottom:4px;">
-    <div class="welcome-brand"><span class="brand-main">Truvanta</span><span class="brand-ai">AI</span></div>
-    <div class="welcome-sub">Ask me anything or paste a news claim.<br>I'll chat or fact-check automatically.</div>
+    <div class="welcome-mark">${TruvantaIcons.mark(30)}</div>
+    <div class="welcome-title">What do you want to check?</div>
+    <div class="welcome-sub">Paste a claim or headline and Truvanta checks it against<br>published sources. Or just ask a question.</div>
     <div class="welcome-chips">
-      <button class="welcome-chip" id="wc1">📰 Paste a headline to fact-check</button>
-      <button class="welcome-chip" id="wc2">💬 Ask me anything</button>
-      <button class="welcome-chip welcome-chip-page" id="wc3">🌐 Analyze this page</button>
+      <button class="welcome-chip" id="wc1"><span class="material-symbols-outlined ms-16">newspaper</span>Paste a headline to fact-check</button>
+      <button class="welcome-chip" id="wc2"><span class="material-symbols-outlined ms-16">chat</span>Ask me anything</button>
+      <button class="welcome-chip welcome-chip-page" id="wc3"><span class="material-symbols-outlined ms-16">search</span>Analyze this page</button>
     </div>`;
   chatContainer.innerHTML = "";
   chatContainer.appendChild(wrap);
@@ -481,7 +574,7 @@ function showViralPanicInterstitial(data, cooldown, onComplete) {
       <div class="friction-icon">
         <span class="material-symbols-outlined">warning</span>
       </div>
-      <div class="friction-title">⚠️ VIRAL MISINFORMATION ALERT</div>
+      <div class="friction-title">Viral misinformation alert</div>
       <div class="friction-subtitle">This claim is spreading rapidly and shows high risk of being false</div>
       <div class="friction-stats">
         <div class="friction-stat">
@@ -678,93 +771,122 @@ function trackFrictionEvent(eventType, cooldown) {
 
 // ── Internal fact card renderer ───────────────────────────────
 
+function _domainOf(url) {
+  try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return ""; }
+}
+
+// Google News links are redirects: never show their host as the "domain".
+function _isRedirectHost(host) { return !host || host === "news.google.com"; }
+
+function _formatDate(v) {
+  const d = new Date(v);
+  if (!v || isNaN(d)) return "";
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+// Right-hand label of a source row: rating, "domain · low trust", domain, or the date.
+function _sourceMeta(a, domain) {
+  if (a.rating) return a.rating;
+  const real = _isRedirectHost(domain) ? "" : domain;
+  if (a.low_trust) return real ? `${real} · low trust` : "low trust";
+  return real || _formatDate(a.published);
+}
+
+// Same shape the in-page card uses: article objects first, then bare URLs.
+function collectSources(data, max = 6) {
+  const out = [];
+  const seen = new Set();
+  for (const a of ensureArray(data.evidence_articles)) {
+    if (!a || !a.url || seen.has(a.url)) continue;
+    seen.add(a.url);
+    const domain = _domainOf(a.url);
+    const src = a.source || a.publisher || "";
+    const named = src && src.toLowerCase().replace(/^www\./, "") !== domain ? src : a.title;
+    out.push({ url: a.url, domain: _sourceMeta(a, domain), name: named || (_isRedirectHost(domain) ? "Source" : domain) });
+  }
+  for (const u of ensureArray(data.evidence)) {
+    if (typeof u !== "string" || seen.has(u) || !/^https?:/i.test(u)) continue;
+    seen.add(u);
+    const domain = _domainOf(u);
+    const hidden = _isRedirectHost(domain);
+    out.push({ url: u, domain: hidden ? "" : domain, name: hidden ? "Source" : domain });
+  }
+  return out.slice(0, max);
+}
+
+const VERDICT_UI = {
+  real:      { cls: "true",  label: "True" },
+  true:      { cls: "true",  label: "True" },
+  fake:      { cls: "false", label: "False" },
+  false:     { cls: "false", label: "False" },
+  uncertain: { cls: "unsure", label: "Uncertain" },
+};
+
+// Escaped text with **bold** and [n] citations (only for sources that are listed).
+function _summaryHtml(text, sourceCount) {
+  return esc(text)
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\s*\[(\d+)\]/g, (m, n) =>
+      Number(n) >= 1 && Number(n) <= sourceCount ? `<sup class="cite">${n}</sup>` : "");
+}
+
 function _renderFactCard(data, scroll = true, animate = true) {
   const verdict  = (data.verdict || "uncertain").toLowerCase();
-  const confPct  = Math.round((data.confidence || 0) * 100);
+  const ui       = VERDICT_UI[verdict] || VERDICT_UI.uncertain;
+  const confPct  = Math.max(0, Math.min(100, Math.round((data.confidence || 0) * 100)));
   const mlPct    = Math.round((data.ml_score   || 0) * 100);
   const aiPct    = Math.round((data.ai_score   || 0) * 100);
   const newsPct  = data.evidence_score != null
     ? Math.round(data.evidence_score * 100)
     : (data.evidence_articles?.length || data.evidence?.length) ? 60 : 0;
+  const mlFill   = mlPct > 50 ? "fill-fake" : "fill-real";
+  const newsFill = newsPct > 50 ? "fill-real" : "fill-fake";
 
-  const srcCount = data.evidence_articles?.length || data.evidence?.length || 0;
+  const sources  = collectSources(data);
 
-  // ── Viral/Trending badges (Phase 2) ───────────────────────────
+  // ── Viral / trending badge ───────────────────────────────────
   const velocity = data.velocity_metrics || {};
-  const isViral = velocity.is_viral || false;
-  const isTrending = velocity.is_trending || false;
   let viralBadgeHtml = "";
-  
-  if (isViral) {
+  if (velocity.is_viral) {
     viralBadgeHtml = `
       <div class="viral-alert-badge">
         <span class="material-symbols-outlined ms-12">warning</span>
-        🚨 VIRAL ALERT - ${velocity.count_5min || 0} checks in 5 min
+        Viral: ${velocity.count_5min || 0} checks in 5 min
       </div>`;
-  } else if (isTrending) {
+  } else if (velocity.is_trending) {
     viralBadgeHtml = `
       <div class="trending-badge">
         <span class="material-symbols-outlined ms-12">trending_up</span>
-        ⚠️ TRENDING - ${velocity.count_1hr || 0} checks in 1 hour
+        Trending: ${velocity.count_1hr || 0} checks in 1 hour
       </div>`;
   }
 
-  const vClass    = verdict === "real" ? "v-real" : verdict === "fake" ? "v-fake" : "v-uncertain";
-  const vIcon     = verdict === "real" ? "check_circle" : verdict === "fake" ? "cancel" : "help";
-  const vLabel    = verdict === "real" ? "REAL" : verdict === "fake" ? "FAKE" : "UNCERTAIN";
-  const confColor = verdict === "real" ? "var(--real)" : verdict === "fake" ? "var(--fake)" : "var(--warn)";
-  const mlFill    = mlPct > 50 ? "fill-fake" : "fill-real";
-  const newsFill  = newsPct > 50 ? "fill-real" : "fill-fake";
+  // ── Sources (numbered to match [n] in the summary) ───────────
+  const srcRows = sources.map((s, i) => `
+      <a class="source-row" href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">
+        <span class="tile">${i + 1}</span>
+        <span class="src-name">${esc(s.name || s.domain)}</span>
+        ${s.domain ? `<span class="src-domain">${esc(s.domain)}</span>` : ""}
+      </a>`).join("");
+  const srcSection = `
+      <div class="fact-sources">
+        <div class="src-label">Sources</div>
+        ${srcRows || `<p class="empty-note">No sources were returned for this check.</p>`}
+      </div>`;
 
-  const evidenceArticles = ensureArray(data.evidence_articles);
-  const evidenceUrls = ensureArray(data.evidence);
-  const hasArticles = evidenceArticles.length;
-  const hasUrls     = evidenceUrls.length;
-
-  let srcHtml = "";
-  if (hasArticles) {
-    srcHtml = evidenceArticles.slice(0, 4).map(a => {
-      const cred = getCredTag(a.url || "");
-      return `<a href="${esc(a.url)}" target="_blank">
-        <div class="src-name-row">
-          <span class="src-name">${esc(a.source)}</span>
-          <span class="src-cred ${cred.cls}">${cred.label}</span>
-        </div>
-        <span class="src-title">${esc(a.title)}</span>
-      </a>`;
-    }).join("");
-  } else if (hasUrls) {
-    srcHtml = evidenceUrls.slice(0, 4).map(s => {
-      const cred = getCredTag(s);
-      let domain = s;
-      try { domain = new URL(s).hostname.replace(/^www\./, ""); } catch {}
-      return `<a href="${esc(s)}" target="_blank">
-        <div class="src-name-row">
-          <span class="src-name">${esc(domain)}</span>
-          <span class="src-cred ${cred.cls}">${cred.label}</span>
-        </div>
-      </a>`;
-    }).join("");
-  }
-
-  // Sub-claims extracted from long input
+  // ── Secondary signals (collapsed) ────────────────────────────
   let subClaimsHtml = "";
   if (data.sub_claims?.length > 1) {
     const items = data.sub_claims.map((c, i) =>
-      `<div class="subclaim-item"><span class="subclaim-num">${i + 1}</span>${esc(c)}</div>`
-    ).join("");
+      `<div class="subclaim-item"><span class="subclaim-num">${i + 1}</span>${esc(c)}</div>`).join("");
     subClaimsHtml = `
       <div class="subclaims-section">
-        <div class="src-label">
-          <span class="material-symbols-outlined ms-12">format_list_bulleted</span>
-          Extracted claims
-        </div>
+        <div class="src-label">Extracted claims</div>
         ${items}
         <div class="subclaim-note">Verdict based on: "${esc(data.primary_claim)}"</div>
       </div>`;
   }
 
-  // Highlighted suspicious phrases
   let highlightHtml = "";
   if (data.highlights?.length) {
     const tags = data.highlights.map(h => {
@@ -777,18 +899,11 @@ function _renderFactCard(data, scroll = true, animate = true) {
     }).join("");
     highlightHtml = `
       <div class="highlights-section">
-        <div class="src-label">
-          <span class="material-symbols-outlined ms-12">flag</span>
-          Suspicious phrases
-        </div>
+        <div class="src-label">Suspicious phrases</div>
         <div class="hl-tags">${tags}</div>
       </div>`;
   }
 
-  const explHtml = data.explanation
-    ? `<div class="fact-expl">${esc(data.explanation)}</div>` : "";
-
-  // Manipulation badge
   let manipHtml = "";
   if (data.manipulation_score > 0.15 && data.manipulation_signals?.length) {
     const level = data.manipulation_score >= 0.5 ? "HIGH" : "MED";
@@ -801,19 +916,15 @@ function _renderFactCard(data, scroll = true, animate = true) {
       </div>`;
   }
 
-  // Contradiction meter
   const ss = data.stance_summary;
   let stanceHtml = "";
   if (ss && (ss.support + ss.contradict + ss.neutral) > 0) {
-    const total = ss.support + ss.contradict + ss.neutral;
-    const supPct  = Math.round((ss.support    / total) * 100);
-    const conPct  = Math.round((ss.contradict / total) * 100);
-    const neuPct  = 100 - supPct - conPct;
-    const meterLabel = ss.contradict > ss.support
-      ? "⚠️ Sources conflict"
-      : ss.support > 0
-        ? "✓ Sources agree"
-        : "Sources neutral";
+    const total  = ss.support + ss.contradict + ss.neutral;
+    const supPct = Math.round((ss.support    / total) * 100);
+    const conPct = Math.round((ss.contradict / total) * 100);
+    const neuPct = 100 - supPct - conPct;
+    const meterLabel = ss.contradict > ss.support ? "Sources conflict"
+      : ss.support > 0 ? "Sources agree" : "Sources neutral";
     stanceHtml = `
       <div class="stance-meter">
         <div class="stance-label">${meterLabel}</div>
@@ -830,21 +941,12 @@ function _renderFactCard(data, scroll = true, animate = true) {
       </div>`;
   }
 
-  const srcSection = srcHtml
-    ? `<div class="fact-sources">
-        <div class="src-label">
-          <span class="material-symbols-outlined ms-12">newspaper</span>
-          News Evidence
-        </div>
-        ${srcHtml}
-      </div>` : "";
-
   const moderation = data.moderation_summary || null;
   let moderationHtml = "";
   if (moderation) {
     const riskPct = Math.round((moderation.risk || 0) * 100);
     const rec = (moderation.recommendation || "allow").toLowerCase();
-    const recLabel = rec === "review" ? "REVIEW" : "ALLOW";
+    const recLabel = rec === "review" ? "Review" : "Allow";
     const recCls = rec === "review" ? "mod-review" : "mod-allow";
     const flags = ensureArray(moderation.flags).slice(0, 3).join(" · ");
     moderationHtml = `
@@ -866,56 +968,52 @@ function _renderFactCard(data, scroll = true, animate = true) {
   avatar.className = "bot-avatar";
   avatar.innerHTML = `<span class="material-symbols-outlined">fact_check</span>`;
 
+  const summary = data.explanation || "";
   const card = document.createElement("div");
-  card.className = "fact-card";
+  card.className = "fact-card" + (animate ? " fade-in" : "");
   card.innerHTML = `
     ${viralBadgeHtml}
     <div class="fact-verdict-hero">
-      <div class="verdict-main">
-        <span class="material-symbols-outlined verdict-icon-lg ${vClass}">${vIcon}</span>
-        <span class="verdict-word ${vClass}">${vLabel}</span>
+      <div class="verdict-row">
+        <span class="chip ${ui.cls}"><i></i>${ui.label}</span>
+        <span class="conf">${confPct}% confidence</span>
       </div>
-      <div class="verdict-conf-row">
-        <span class="verdict-conf-pct">${confPct}%</span>
-        <span class="verdict-conf-label">confidence</span>
-        <div class="verdict-conf-bar">
-          <div class="verdict-conf-fill conf-bar" style="background:${confColor}"></div>
-        </div>
-      </div>
-      <div class="verdict-meta">
-        <span class="material-symbols-outlined ms-12">database</span>
-        Analyzed from ${srcCount} source${srcCount !== 1 ? "s" : ""} · Bias checked · ML + AI + News
-      </div>
+      <div class="bar"><span class="${ui.cls} conf-bar"></span></div>
       ${verdict === "uncertain" ? `<div class="uncertain-note">Signals conflict or evidence is insufficient for a definitive verdict.</div>` : ""}
-      ${data.verdict_changed ? `<div class="verdict-changed-note">⚠️ This claim's verdict has changed since it was last checked.</div>` : ""}
+      ${data.verdict_changed ? `<div class="verdict-changed-note">This claim's verdict has changed since it was last checked.</div>` : ""}
     </div>
     <div class="fact-body">
-      <div class="score-row">
-        <span class="score-lbl">ML</span>
-        <div class="score-track"><div class="score-fill ${mlFill} ml-bar"></div></div>
-        <span class="score-num">${mlPct}%</span>
-      </div>
-      <div class="score-row">
-        <span class="score-lbl">AI</span>
-        <div class="score-track"><div class="score-fill fill-ai ai-bar"></div></div>
-        <span class="score-num">${aiPct}%</span>
-      </div>
-      <div class="score-row">
-        <span class="score-lbl">News</span>
-        <div class="score-track"><div class="score-fill ${newsFill} news-bar"></div></div>
-        <span class="score-num">${newsPct}%</span>
-      </div>
-      ${moderationHtml}
-      ${manipHtml}
-      ${subClaimsHtml}
-      ${highlightHtml}
-      ${explHtml}
-      ${stanceHtml}
+      ${summary ? `<p class="fact-expl">${_summaryHtml(summary, sources.length)}</p>` : ""}
       ${srcSection}
+      <details class="signals">
+        <summary>Analysis details</summary>
+        <div class="signals-body">
+          <div class="score-row">
+            <span class="score-lbl">ML</span>
+            <div class="score-track"><div class="score-fill ${mlFill} ml-bar"></div></div>
+            <span class="score-num">${mlPct}%</span>
+          </div>
+          <div class="score-row">
+            <span class="score-lbl">AI</span>
+            <div class="score-track"><div class="score-fill fill-ai ai-bar"></div></div>
+            <span class="score-num">${aiPct}%</span>
+          </div>
+          <div class="score-row">
+            <span class="score-lbl">News</span>
+            <div class="score-track"><div class="score-fill ${newsFill} news-bar"></div></div>
+            <span class="score-num">${newsPct}%</span>
+          </div>
+          ${moderationHtml}
+          ${manipHtml}
+          ${subClaimsHtml}
+          ${highlightHtml}
+          ${stanceHtml}
+        </div>
+      </details>
       <div class="fact-actions">
-        <button class="fact-btn view-btn">View Detail</button>
-        <button class="fact-btn primary save-btn">Save Claim</button>
-        <button class="fact-btn feedback-btn" title="Report wrong verdict">⚑ Wrong?</button>
+        <button class="fact-btn view-btn">View detail</button>
+        <button class="fact-btn primary save-btn">Save claim</button>
+        <button class="fact-btn feedback-btn" title="Report wrong verdict">Wrong?</button>
       </div>
     </div>`;
 
@@ -923,27 +1021,18 @@ function _renderFactCard(data, scroll = true, animate = true) {
   row.appendChild(card);
   chatContainer.appendChild(row);
 
-  card.querySelector(".ml-bar").style.width    = `${mlPct}%`;
-  card.querySelector(".ai-bar").style.width    = `${aiPct}%`;
-  card.querySelector(".news-bar").style.width  = `${newsPct}%`;
-  card.querySelector(".conf-bar").style.width  = `${confPct}%`;
+  const setW = (sel, pct) => { card.querySelector(sel).style.width = `${pct}%`; };
+  setW(".ml-bar", mlPct); setW(".ai-bar", aiPct); setW(".news-bar", newsPct);
+  const fill = card.querySelector(".conf-bar");
+  if (animate) {
+    requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.transform = `scaleX(${confPct / 100})`; }));
+  } else {
+    fill.style.transition = "none";
+    fill.style.transform = `scaleX(${confPct / 100})`;
+  }
   card.querySelector(".view-btn").addEventListener("click", () => viewDetail(data));
   card.querySelector(".save-btn").addEventListener("click", e => saveCard(data, e.currentTarget));
   card.querySelector(".feedback-btn").addEventListener("click", () => showFeedback(card, data));
-
-  // Typewriter effect on explanation (only for new messages)
-  const explEl = card.querySelector(".fact-expl");
-  if (explEl && data.explanation && animate) {
-    const full = data.explanation;
-    explEl.textContent = "";
-    let i = 0;
-    const tw = setInterval(() => {
-      explEl.textContent += full[i];
-      i++;
-      if (i >= full.length) clearInterval(tw);
-      scrollBottom();
-    }, 12);
-  }
 
   if (scroll) scrollBottom();
 }
@@ -964,9 +1053,8 @@ function saveCard(data, btn) {
     claims.unshift(data);
     chrome.storage.local.set({ savedClaims: claims.slice(0, 50) });
     if (btn) {
-      btn.textContent = "Saved ✓";
-      btn.style.background = "var(--real)";
-      btn.style.color = "#fff";
+      btn.textContent = "Saved";
+      btn.classList.add("is-saved");
       btn.disabled = true;
     }
   });
@@ -977,16 +1065,16 @@ function showFeedback(card, data) {
   const actionsEl = card.querySelector(".fact-actions");
   actionsEl.innerHTML = `
     <span class="feedback-prompt">Correct verdict:</span>
-    <button class="fact-btn feedback-real">✓ Real</button>
-    <button class="fact-btn feedback-fake">✗ Fake</button>
+    <button class="fact-btn feedback-real">Real</button>
+    <button class="fact-btn feedback-fake">Fake</button>
     <button class="fact-btn feedback-cancel">Cancel</button>`;
   actionsEl.querySelector(".feedback-real").addEventListener("click", () => submitFeedback(card, data, "real"));
   actionsEl.querySelector(".feedback-fake").addEventListener("click", () => submitFeedback(card, data, "fake"));
   actionsEl.querySelector(".feedback-cancel").addEventListener("click", () => {
     actionsEl.innerHTML = `
-      <button class="fact-btn view-btn">View Detail</button>
-      <button class="fact-btn primary save-btn">Save Claim</button>
-      <button class="fact-btn feedback-btn" title="Report wrong verdict">⚑ Wrong?</button>`;
+      <button class="fact-btn view-btn">View detail</button>
+      <button class="fact-btn primary save-btn">Save claim</button>
+      <button class="fact-btn feedback-btn" title="Report wrong verdict">Wrong?</button>`;
     actionsEl.querySelector(".view-btn").addEventListener("click", () => viewDetail(data));
     actionsEl.querySelector(".save-btn").addEventListener("click", () => saveCard(data));
     actionsEl.querySelector(".feedback-btn").addEventListener("click", () => showFeedback(card, data));
@@ -995,7 +1083,7 @@ function showFeedback(card, data) {
 
 async function submitFeedback(card, data, actual) {
   const actionsEl = card.querySelector(".fact-actions");
-  actionsEl.innerHTML = `<span class="feedback-prompt" style="color:var(--real)">✓ Feedback recorded</span>`;
+  actionsEl.innerHTML = `<span class="feedback-prompt" style="color:var(--real)">Feedback recorded</span>`;
   try {
     await authFetch("/feedback", {
       method: "POST",
@@ -1138,7 +1226,7 @@ async function send() {
   inputText.value = "";
   autoResize();
 
-  if (chatContainer.querySelector(".welcome-screen")) {
+  if (chatContainer.querySelector(".welcome-screen, .chat-state")) {
     chatContainer.innerHTML = "";
   }
 
@@ -1207,7 +1295,7 @@ async function send() {
     if (data.session_id && data.session_id !== currentSessionId) {
       currentSessionId = data.session_id;
       chrome.storage.local.set({ currentSessionId });
-      await loadSessions();
+      await loadSessions(true);
     }
 
     const normalized = normalizeMessageResponse(data || {});
@@ -1243,8 +1331,8 @@ async function send() {
 function setChatTitle(title) {
   const el = document.getElementById("chat-title");
   if (!el) return;
-  if (!title || title === "TruvantaAI") {
-    el.innerHTML = '<span class="brand-main">Truvanta</span><span class="brand-ai">AI</span>';
+  if (!title || title === "TruvantaAI" || title === "Truvanta") {
+    el.innerHTML = TruvantaIcons.mark(15) + '<span class="brand-main">Truvanta</span>';
   } else {
     // Session title — plain text, no brand styling
     el.textContent = title;
@@ -1393,12 +1481,12 @@ async function startVoiceRecording() {
       recognition.onstart = () => {
         isRecording = true;
         voiceBtn.querySelector('.material-symbols-outlined').textContent = 'graphic_eq';
-        voiceBtn.style.color = '#f5576c';
+        voiceBtn.style.color = '#ff6166';
         voiceBtn.style.animation = 'pulse 1.5s ease-in-out infinite';
         voiceBtn.title = 'Stop recording';
-        inputText.placeholder = '🎤 Listening...';
-        inputText.style.borderColor = '#f5576c';
-        inputText.style.boxShadow = '0 0 0 3px rgba(245, 87, 108, 0.1)';
+        inputText.placeholder = 'Listening…';
+        inputText.style.borderColor = '#ff6166';
+        inputText.style.boxShadow = '0 0 0 3px rgba(255, 97, 102, 0.12)';
       };
       
       recognition.onresult = (event) => {
@@ -1424,7 +1512,7 @@ async function startVoiceRecording() {
         
         let msg = 'Speech recognition error.\n\n';
         if (event.error === 'not-allowed') {
-          msg += 'Microphone access denied.\n\nPlease:\n1. Click 🔒 in address bar\n2. Allow microphone\n3. Try again';
+          msg += 'Microphone access denied.\n\nPlease:\n1. Click the lock icon in the address bar\n2. Allow microphone\n3. Try again';
         } else if (event.error === 'no-speech') {
           msg = 'No speech detected. Please try again.';
         } else {
@@ -1490,12 +1578,12 @@ async function startAudioRecording() {
   isRecording = true;
   
   voiceBtn.querySelector('.material-symbols-outlined').textContent = 'graphic_eq';
-  voiceBtn.style.color = '#f5576c';
+  voiceBtn.style.color = '#ff6166';
   voiceBtn.style.animation = 'pulse 1.5s ease-in-out infinite';
   voiceBtn.title = 'Stop recording';
-  inputText.placeholder = '🎤 Listening...';
-  inputText.style.borderColor = '#f5576c';
-  inputText.style.boxShadow = '0 0 0 3px rgba(245, 87, 108, 0.1)';
+  inputText.placeholder = 'Listening…';
+  inputText.style.borderColor = '#ff6166';
+  inputText.style.boxShadow = '0 0 0 3px rgba(255, 97, 102, 0.12)';
 }
 
 function detectClaimIntent(text) {

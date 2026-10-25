@@ -139,9 +139,9 @@ function createCard(item) {
   const evPct   = item.evidence_score != null ? Math.round(item.evidence_score * 100) : null;
 
   let badges = "";
-  if (item.is_viral)                          badges += `<span class="priority-badge priority-viral">🔥 Viral</span>`;
-  if (item.is_trending)                       badges += `<span class="priority-badge priority-trending">📈 Trending</span>`;
-  if (item.cluster_size && item.cluster_size > 5) badges += `<span class="priority-badge priority-cluster">🔗 ${item.cluster_size} similar</span>`;
+  if (item.is_viral)                          badges += `<span class="priority-badge priority-viral">Viral</span>`;
+  if (item.is_trending)                       badges += `<span class="priority-badge priority-trending">Trending</span>`;
+  if (item.cluster_size && item.cluster_size > 5) badges += `<span class="priority-badge priority-cluster">${item.cluster_size} similar</span>`;
 
   const vClass = item.current_verdict === "fake" ? "v-fake" : item.current_verdict === "real" ? "v-real" : "v-uncertain";
 

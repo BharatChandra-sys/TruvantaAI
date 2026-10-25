@@ -3,16 +3,17 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=420">
-  <title>TruvantaAI — Login</title>
+  <meta name="color-scheme" content="dark">
+  <title>Truvanta — Login</title>
   <link rel="stylesheet" href="shared.css">
 </head>
 <body>
 <div class="login-wrap">
 
   <div class="login-header">
-    <img src="../icons/logo.png" alt="TruvantaAI" class="login-logo-icon">
+    <div class="login-mark"><svg class="tv-mark" width="46" height="36" viewBox="0 0 40 31" fill="none" aria-hidden="true" focusable="false"><path d="M11.6 9.6V24.6C11.6 27.5 13.2 29.2 16.2 29.2" stroke="#ededef" stroke-width="4"/><path d="M10.4 9.4 19.4 20.6 33.6 7.4" stroke="#0a0a0b" stroke-width="6.6" stroke-linejoin="round"/><path d="M10.4 9.4 19.4 20.6 33.6 7.4" stroke="#ffc53d" stroke-width="4.2" stroke-linejoin="round"/><path d="M0.4 11.4C1.8 5.6 4.6 2.4 9.6 2.4H32.4L26 9.2H10.6C6.4 9.2 3 9.9 0.4 11.4Z" fill="#ededef"/><path d="M0.4 11.4C1.8 5.6 4.6 2.4 9.6 2.4H12.4C8.2 3 5.6 5.4 4.4 9.6 2.8 10 1.4 10.6 0.4 11.4Z" fill="#ffc53d"/><g fill="#ffc53d"><rect x="37.2" y="0.2" width="2.7" height="2.7" rx="0.5"/><rect x="34.2" y="3" width="1.9" height="1.9" rx="0.4"/><rect x="36.3" y="5.8" width="2.1" height="2.1" rx="0.4"/><rect x="34.8" y="10.2" width="2" height="2" rx="0.4" fill-opacity="0.55"/></g></svg></div>
     <div class="login-brand">
-      <span class="brand-main">Truvanta</span><span class="brand-ai">AI</span>
+      <span class="brand-main">Truvanta</span>
     </div>
     <p class="login-tagline">Verify information before you believe it</p>
   </div>
@@ -95,7 +96,7 @@
       </div>
       <button id="send-otp-btn" class="form-btn">Send Code</button>
       <div style="text-align:center;margin-top:10px;">
-        <button id="back-to-login-btn" class="link-btn">← Back to Sign In</button>
+        <button id="back-to-login-btn" class="link-btn">Back to Sign in</button>
       </div>
     </div>
 
@@ -116,7 +117,7 @@
         <button id="resend-otp-btn" class="link-btn" style="display:none">Resend code</button>
       </div>
       <div style="text-align:center;margin-top:8px;">
-        <button id="back-to-login-from-reset-btn" class="link-btn">← Back to Sign In</button>
+        <button id="back-to-login-from-reset-btn" class="link-btn">Back to Sign in</button>
       </div>
     </div>
   </div>
@@ -126,6 +127,7 @@
 </div>
 <script src="../env.js"></script>
 <script src="config.js"></script>
+<script src="icons.js"></script>
 <script src="login.js"></script>
 </body>
 </html>

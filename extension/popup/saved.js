@@ -44,7 +44,7 @@ function render(claims) {
     el.innerHTML = `
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:8px">
         <div style="font-size:12.5px;color:var(--t1);line-height:1.55;flex:1">${esc(c.content || c.explanation || "")}</div>
-        <button class="icon-btn unsave-btn" style="flex-shrink:0;margin-top:-2px">
+        <button class="icon-btn unsave-btn" style="flex-shrink:0;margin-top:-2px" aria-label="Remove from saved" title="Remove from saved">
           <span class="material-symbols-outlined ms-14">bookmark_remove</span>
         </button>
       </div>

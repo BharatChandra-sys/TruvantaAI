@@ -121,8 +121,8 @@ async function loadSystemStats() {
     const driftBody = document.getElementById("drift-body");
     if (drift.n > 0) {
       const alertHtml = drift.drift_alert
-        ? `<span style="color:var(--fake);font-weight:600">⚠️ Drift detected</span>`
-        : `<span style="color:var(--real)">✓ Stable</span>`;
+        ? `<span style="color:var(--fake);font-weight:600">Drift detected</span>`
+        : `<span style="color:var(--real)">Stable</span>`;
       driftBody.innerHTML = `
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
           <span style="font-size:11px;color:var(--t3)">Status</span>

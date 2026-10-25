@@ -51,7 +51,7 @@ function render(data) {
     <div class="verdict-conf-bar" style="height:5px;border-radius:3px;background:var(--bg3);overflow:hidden">
       <div style="height:100%;width:${confPct}%;background:${confColor};border-radius:3px;transition:width .4s"></div>
     </div>
-    ${data.verdict_changed ? `<div class="verdict-changed-note" style="margin-top:8px">⚠️ This claim's verdict has changed since it was last checked.</div>` : ""}
+    ${data.verdict_changed ? `<div class="verdict-changed-note" style="margin-top:8px">This claim's verdict has changed since it was last checked.</div>` : ""}
     ${v === "uncertain" ? `<div class="uncertain-note" style="margin-top:8px">Signals conflict or evidence is insufficient for a definitive verdict.</div>` : ""}`;
   content.appendChild(banner);
 
@@ -119,8 +119,8 @@ function render(data) {
           ? (importance >= 0.3 ? "shap-fake-high" : importance >= 0.15 ? "shap-fake-med" : "shap-fake-low")
           : (importance >= 0.3 ? "shap-real-high" : importance >= 0.15 ? "shap-real-med" : "shap-real-low");
         const tip = h.explanation || (isFake ? "Indicates misinformation" : "Supports credibility");
-        const icon = isFake ? "⚠️" : "✓";
-        return `<span class="hl-tag ${cls}" title="${esc(tip)}">${icon} ${esc(h.phrase)}</span>`;
+        const icon = "";
+        return `<span class="hl-tag ${cls}" title="${esc(tip)}">${esc(h.phrase)}</span>`;
       }
       
       // Heuristic fallback styling
@@ -191,8 +191,8 @@ function render(data) {
     const supPct = Math.round((ss.support    / total) * 100);
     const conPct = Math.round((ss.contradict / total) * 100);
     const neuPct = 100 - supPct - conPct;
-    const label  = ss.contradict > ss.support ? "⚠️ Sources conflict"
-                 : ss.support > 0 ? "✓ Sources agree" : "Sources neutral";
+    const label  = ss.contradict > ss.support ? "Sources conflict"
+                 : ss.support > 0 ? "Sources agree" : "Sources neutral";
     const stanceEl = document.createElement("div");
     stanceEl.className = "card";
     stanceEl.innerHTML = `
@@ -256,8 +256,8 @@ function render(data) {
       data.evidence_articles.slice(0, 5).forEach(a => {
         const stanceCls = a.stance === "support" ? "stance-sup-txt"
                         : a.stance === "contradict" ? "stance-con-txt" : "stance-neu-txt";
-        const stanceLabel = a.stance === "support" ? "✓ supports"
-                          : a.stance === "contradict" ? "✗ contradicts" : "· neutral";
+        const stanceLabel = a.stance === "support" ? "supports"
+                          : a.stance === "contradict" ? "contradicts" : "neutral";
         const trustLabel = a.trust_label || "MED";
         const trustCls   = trustLabel === "HIGH" ? "cred-high" : trustLabel === "LOW" ? "cred-low" : "cred-med";
         const el = document.createElement("a");

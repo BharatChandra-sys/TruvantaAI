@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "TruvantaAI",
-  "version": "2.6.2",
+  "version": "2.6.3",
   "description": "TruvantaAI — Real-time fake news detection powered by AI",
 
   "permissions": [

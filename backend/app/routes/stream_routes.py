@@ -26,7 +26,7 @@ import time
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 
-from app.auth import get_optional_user
+from app.auth import get_current_user
 from app.cache import cache
 from app.schemas import MessageRequest
 
@@ -81,7 +81,7 @@ def _persist(claim: str, result: dict, user_id):
 def _run(claim: str, user_id):
     from app.analysis.ai import run_ai_analysis, run_grounded_analysis
     from app.analysis.evidence import _rating_stance
-    from app.analysis.search import iter_search, reconcile, to_evidence
+    from app.analysis.search import iter_search, reconcile, to_evidence, verdict_without_model
 
     t0 = time.monotonic()
     cache_key = "stream:" + hashlib.sha256(" ".join(claim.lower().split()).encode()).hexdigest()
@@ -124,9 +124,10 @@ def _run(claim: str, user_id):
             verdict, confidence = reconcile(verdict, confidence, articles)
             ai_score, model = grounded["ai_score"], grounded.get("model")
         else:
-            # No sources found or no model answered: fall back to the model's own knowledge.
-            ai_score, explanation = run_ai_analysis(text)
-            verdict, confidence = _verdict_from_score(ai_score)
+            # No sources, or no model answered. Never fall back to the model's memory:
+            # it doesn't know recent events and would answer confidently anyway.
+            verdict, confidence, explanation = verdict_without_model(passages, articles)
+            ai_score = {"fake": 0.85, "real": 0.15}.get(verdict, 0.5)
             model = None
 
         result = {
@@ -153,10 +154,11 @@ def _run(claim: str, user_id):
 
 
 @router.post("/check/stream")
-def check_stream(req: MessageRequest, user=Depends(get_optional_user)):
+def check_stream(req: MessageRequest, user=Depends(get_current_user)):
+    """Signed-in users only: checks use free-tier quotas that must not be open to anyone."""
     claim = req.message.strip()
     return StreamingResponse(
-        _run(claim, user.id if user else None),
+        _run(claim, user.id),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

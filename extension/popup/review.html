@@ -2,18 +2,18 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Review Queue — TruvantaAI</title>
+  <title>Review Queue — Truvanta</title>
   <link rel="stylesheet" href="shared.css">
 </head>
 <body>
 <div class="page-wrap">
 
   <header class="page-header">
-    <button id="back-btn" class="back-btn">
+    <button id="back-btn" class="back-btn" aria-label="Back" title="Back">
       <span class="material-symbols-outlined ms-20">arrow_back</span>
     </button>
     <h1>Review Queue</h1>
-    <button id="refresh-btn" class="icon-btn" title="Refresh queue">
+    <button id="refresh-btn" class="icon-btn" aria-label="Refresh queue" title="Refresh queue">
       <span class="material-symbols-outlined ms-20">refresh</span>
     </button>
   </header>
@@ -84,6 +84,7 @@
 
 <script src="../env.js"></script>
 <script src="config.js"></script>
+<script src="icons.js"></script>
 <script src="websocket_client.js"></script>
 <script src="review.js"></script>
 </body>

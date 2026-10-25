@@ -97,7 +97,7 @@ def get_messages(
     msgs = (
         db.query(ChatMessage)
         .filter(ChatMessage.session_id == session_id)
-        .order_by(ChatMessage.created_at)
+        .order_by(ChatMessage.created_at, ChatMessage.id)
         .offset(offset)
         .limit(limit)
         .all()
@@ -120,7 +120,10 @@ def save_message(db: Session, session_id: int, role: str, content: str, extra: d
         ml_score    = extra.get("ml_score"),
         ai_score    = extra.get("ai_score"),
         explanation = extra.get("explanation"),
-        evidence    = json.dumps(extra.get("evidence", [])),
+        # Keep the full article objects (title / source / url) when we have them,
+        # so a reopened chat can re-render the numbered source rows. Plain URL
+        # lists still work (older rows, chat replies).
+        evidence    = json.dumps(_compact_articles(extra.get("evidence_articles")) or extra.get("evidence", [])),
     )
     db.add(msg)
     # Auto-title session from first user message
@@ -149,12 +152,26 @@ def _session_dict(s: ChatSession) -> dict:
     return {"id": s.id, "title": s.title, "created_at": s.created_at.isoformat(), "updated_at": s.updated_at.isoformat()}
 
 
+def _compact_articles(articles, limit: int = 8):
+    """Reduce evidence article dicts to small JSON-safe fields for storage."""
+    keep = ("url", "title", "source", "publisher", "rating", "stance", "snippet", "published", "low_trust")
+    out = []
+    for a in (articles or [])[:limit]:
+        if isinstance(a, dict) and a.get("url"):
+            out.append({k: a[k] for k in keep if isinstance(a.get(k), (str, int, float, bool))})
+    return out
+
+
 def _msg_dict(m: ChatMessage) -> dict:
     evidence = []
     try:
         evidence = json.loads(m.evidence) if m.evidence else []
     except Exception:
         pass
+    # Evidence is stored either as a list of URLs or a list of article dicts.
+    # Always expose both shapes so the popup can render a fact-check card.
+    evidence_articles = [e for e in evidence if isinstance(e, dict)]
+    evidence = [e["url"] if isinstance(e, dict) else e for e in evidence if (e.get("url") if isinstance(e, dict) else e)]
     return {
         "id":          m.id,
         "role":        m.role,
@@ -166,5 +183,6 @@ def _msg_dict(m: ChatMessage) -> dict:
         "ai_score":    m.ai_score,
         "explanation": m.explanation,
         "evidence":    evidence,
+        "evidence_articles": evidence_articles,
         "created_at":  m.created_at.isoformat(),
     }

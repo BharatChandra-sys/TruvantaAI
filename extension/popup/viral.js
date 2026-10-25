@@ -82,7 +82,7 @@ function renderViralClaims(claims) {
   if (!claims.length) {
     list.innerHTML = `
       <div class="viral-empty">
-        <div class="viral-empty-icon">🛡️</div>
+        <div class="viral-empty-icon"><span class="material-symbols-outlined ms-24">verified</span></div>
         <div style="font-size:13px;color:var(--t2)">No viral claims detected</div>
         <div style="font-size:11px;color:var(--t3);margin-top:4px">All clear right now</div>
       </div>`;

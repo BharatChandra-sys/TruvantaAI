@@ -320,6 +320,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       pingBackend();
       return false;
 
+    case "OPEN_LOGIN":
+      // The popup's login page; after signing in it continues to the main popup.
+      chrome.windows.create({
+        url: chrome.runtime.getURL("popup/login.html"),
+        type: "popup", width: 420, height: 640, focused: true,
+      });
+      return false;
+
     case "TRUVANTA_API":
       proxyApi(message).then(sendResponse);
       return true;  // async sendResponse — keeps the worker alive until it answers

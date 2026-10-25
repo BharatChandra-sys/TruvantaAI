@@ -530,6 +530,7 @@ Rules:
 - "real" means the sources support the claim, "fake" means they refute it, "uncertain" means they are mixed or do not settle it.
 - Base the verdict on the sources. Use general knowledge only to read them correctly, never as the only reason.
 - A published fact-check rating is strong evidence, but only if it is about the same claim.
+- Sources marked "low-reliability web result" are weak: never base the verdict on them alone.
 - Give a stance for every source number. "neutral" means the source does not address the claim.
 - Cite only source numbers that appear below, and only for sources that address the claim.
 - Do not describe sources that are irrelevant; just mark them "neutral". Be calm and factual; no disclaimers."""
@@ -543,7 +544,8 @@ _CITATION = re.compile(r"\[(\d+)\]")
 def _format_sources(passages: List[dict]) -> str:
     lines = []
     for i, p in enumerate(passages, 1):
-        meta = ", ".join(x for x in (p.get("source"), p.get("published", "")[:10]) if x)
+        meta = ", ".join(x for x in (p.get("source"), p.get("published", "")[:10],
+                                     "low-reliability web result" if p.get("low_trust") else "") if x)
         lines.append(f"[{i}] {p.get('title', '')[:160]} ({meta})\n{p.get('text', '')}")
     return "\n\n".join(lines)
 

@@ -60,11 +60,11 @@
     .toolbar.in { opacity: 1; transform: none; }
     .check-btn {
       display: flex; align-items: center; gap: 7px; height: 30px; padding: 0 12px 0 9px;
-      border-radius: 9px; background: var(--accent); color: var(--on-accent);
+      border-radius: 9px; background: #ededef; color: #0a0a0b;
       font-size: 13px; font-weight: 600; letter-spacing: -0.01em;
       transition: background-color 120ms var(--ease-out), transform 120ms var(--ease-out);
     }
-    .check-btn:hover { background: var(--accent-hover); }
+    .check-btn:hover { background: #ffffff; }
     .icon-btn {
       display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; color: var(--fg-2);
       transition: background-color 120ms var(--ease-out), color 120ms var(--ease-out), transform 120ms var(--ease-out);
@@ -101,7 +101,18 @@
       font-size: 13px; line-height: 1.45; color: var(--fg-2);
       display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
     }
-    .body { margin-top: 16px; max-height: min(52vh, 440px); overflow-y: auto; scrollbar-width: thin; }
+    .body {
+      margin-top: 16px; max-height: min(52vh, 440px); overflow-y: auto;
+      margin-right: -10px; padding-right: 10px;      /* keep the scrollbar off the content */
+      scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.14) transparent;
+    }
+    .body:hover { scrollbar-color: rgba(255,255,255,0.24) transparent; }
+    /* Browsers without scrollbar-color support */
+    .body::-webkit-scrollbar { width: 6px; }
+    .body::-webkit-scrollbar-track { background: transparent; }
+    .body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.14); border-radius: 999px; }
+    .body::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.24); }
+    .body::-webkit-scrollbar-button { display: none; height: 0; }
     .fade { animation: fade-up 220ms var(--ease-out) both; }
     @keyframes fade-up { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
@@ -115,6 +126,18 @@
       animation: fade-up 300ms var(--ease-out) both;
     }
     .prelim-text { font-size: 12px; color: var(--fg-2); }
+    .signin { padding: 4px 0 2px; }
+    .signin-title { font-size: 14px; font-weight: 600; color: var(--fg); letter-spacing: -0.01em; }
+    .signin-text { margin-top: 6px; font-size: 13px; line-height: 1.5; color: var(--fg-2); }
+    .signin-btn {
+      margin-top: 14px; height: 34px; padding: 0 16px; border-radius: 9px;
+      background: #ededef; color: #0a0a0b; font-size: 13px; font-weight: 600;
+      transition: background-color 120ms var(--ease-out), transform 120ms var(--ease-out), opacity 120ms;
+    }
+    .signin-btn:hover { background: #ffffff; }
+    .signin-btn:active { transform: scale(0.97); }
+    .signin-btn:disabled { opacity: 0.6; cursor: default; }
+    .signin-hint { margin-top: 10px; font-size: 12px; color: var(--fg-3); }
     .icon-btn.done { color: var(--true); }
     .pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--fg-2); animation: pulse 1.2s ease-in-out infinite; }
     @keyframes pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
@@ -332,7 +355,7 @@
     if (!res) throw new Error("Couldn’t reach Truvanta. Try again in a moment.");
     if (res.error === "timeout") throw new Error("This is taking longer than usual. Try again in a moment.");
     if (res.error) throw new Error("Couldn’t reach Truvanta. Check your connection and try again.");
-    if (res.status === 401) throw new Error("Sign in to Truvanta to check claims. Click the extension icon to log in.");
+    if (res.status === 401) throw new NotSignedIn();
     if (res.status === 429) throw new Error("Too many requests. Wait a moment and try again.");
     if (!res.ok) throw new Error(`The server returned an error (${res.status}). Try again in a moment.`);
     return res.data;
@@ -388,7 +411,7 @@
       toolbar.setAttribute("role", "toolbar");
       toolbar.setAttribute("aria-label", "Truvanta");
       toolbar.innerHTML = `
-        <button class="check-btn" data-action="check" title="Check this claim">${markSvg(13, false, "#ffc53d", "#1a1300")}<span>Check</span></button>
+        <button class="check-btn" data-action="check" title="Check this claim">${markSvg(13, false, "#ededef", "#0a0a0b")}<span>Check</span></button>
         <div class="divider"></div>
         <button class="icon-btn" data-action="copy" title="Copy" aria-label="Copy">${ICONS.copy}</button>
         <button class="icon-btn" data-action="highlight" title="Highlight" aria-label="Highlight">${ICONS.highlight}</button>
@@ -813,7 +836,8 @@
       // Published fact-checks show their rating ("False", "Mostly true") instead of the domain.
       // Results whose "source" is just their domain read better under their page title.
       const named = a.source && a.source.toLowerCase().replace(/^www\./, "") !== domain ? a.source : a.title;
-      out.push({ url: a.url, domain: a.rating || domain, name: named || domain });
+      // Low-reliability web results are labelled so they read as weaker evidence.
+      out.push({ url: a.url, domain: a.rating || (a.low_trust ? `${domain} · low trust` : domain), name: named || domain });
     }
     for (const u of urls) {
       if (typeof u !== "string" || seen.has(u) || !/^https?:/i.test(u)) continue;
@@ -856,7 +880,7 @@
           case "error": finish(reject, new Error(data?.message || "The check failed. Try again in a moment.")); break;
           case "http_error":
             if (status === 404 || status === 405) finish(reject, new StreamUnavailable());
-            else if (status === 401) finish(reject, new Error("Sign in to Truvanta to check claims. Click the extension icon to log in."));
+            else if (status === 401) finish(reject, new NotSignedIn());
             else if (status === 429) finish(reject, new Error("Too many requests. Wait a moment and try again."));
             else finish(reject, new Error(`The server returned an error (${status}). Try again in a moment.`));
             break;
@@ -917,9 +941,52 @@
     if (label) label.textContent = text;
   }
 
+  async function signedIn() {
+    try {
+      const { token } = await chrome.storage.local.get("token");
+      return !!token;
+    } catch {
+      return false;
+    }
+  }
+
+  // Shown instead of a result when the user isn't signed in (or their session expired).
+  function renderSignIn(expired = false) {
+    const box = resultEl();
+    if (!box || !card) return;
+    clearTimers();
+    setMeta("");
+    card.awaitingLogin = true;
+    box.innerHTML = "";
+    const wrap = el("div", "fade signin");
+    wrap.append(
+      el("p", "signin-title", expired ? "Your session has expired" : "Sign in to check claims"),
+      el("p", "signin-text", "Truvanta checks claims against live sources and shows its evidence. "
+        + "It's free; you just need an account."),
+    );
+    const btn = el("button", "signin-btn", "Sign in");
+    btn.addEventListener("click", () => {
+      try { chrome.runtime.sendMessage({ type: "OPEN_LOGIN" })?.catch?.(() => {}); }
+      catch { showToast("Refresh this page, then try again"); return; }
+      btn.textContent = "Waiting for sign-in…";
+      btn.disabled = true;
+    });
+    wrap.append(btn, el("p", "signin-hint", "The check starts automatically once you're signed in."));
+    box.appendChild(wrap);
+  }
+
+  class NotSignedIn extends Error {
+    constructor() { super("Sign in to Truvanta to continue."); }
+  }
+
   async function runCheck() {
     const current = card;
     if (!current) return;
+    if (!(await signedIn())) {
+      if (card === current) renderSignIn();
+      return;
+    }
+    current.awaitingLogin = false;
     current.busy = true;
     renderScanning();
     setMeta("checking…");
@@ -947,11 +1014,19 @@
       renderResult(data || {});
     } catch (err) {
       if (card !== current) return;
-      renderError(err.message, () => runCheck());
+      if (err instanceof NotSignedIn) renderSignIn(true);
+      else renderError(err.message, () => runCheck());
     } finally {
       if (card === current) current.busy = false;
     }
   }
+
+  // Resume a check as soon as the user signs in from the login window.
+  try {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === "local" && changes.token?.newValue && card?.awaitingLogin) runCheck();
+    });
+  } catch { /* not running as an extension */ }
 
   async function askFollowUp(question) {
     if (!card) return;
@@ -1004,6 +1079,7 @@
 
   function handleSelection(pointerX) {
     const selected = window.getSelection().toString().trim();
+    if (card && card.text === selected) return;   // its card is already open
     if (selected.length > MIN_SELECTION) {
       showToolbar(selected, pointerX);
       clearTimeout(selectionDebounce);

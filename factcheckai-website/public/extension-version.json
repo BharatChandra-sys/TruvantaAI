@@ -1,21 +1,21 @@
 {
   "name": "TruvantaAI",
-  "version": "2.6.2",
-  "build_date": "2026-09-27",
+  "version": "2.6.3",
+  "build_date": "2026-10-25",
   "changes": [
-    "Rebranded from FactCheckAI to TruvantaAI with new logo",
-    "Fixed inline chat claim detection - shows verdict and scores",
-    "Fixed history page loading - sessions load correctly",
-    "Updated all UI elements with new brand identity",
-    "New extension icons with transparent background"
+    "Sign-in required for checks; the card prompts to sign in and resumes automatically",
+    "Redesigned popup: neutral buttons, Truvanta logo, sentence-case labels, themed scrollbars",
+    "Fixed past chats opening empty; reopened chats show fact-check cards with sources",
+    "More free evidence sources: Google News, Bing News, PubMed, Bing web (low trust)",
+    "Never guesses from memory: no sources gives an honest 'Uncertain'"
   ],
   "backend_url": "https://factcheckai-coq3.onrender.com",
   "website_url": "https://factcheckaisix.vercel.app",
-  "download_url": "https://factcheckaisix.vercel.app/truvanta-v2.6.2.zip",
+  "download_url": "https://factcheckaisix.vercel.app/truvanta-v2.6.3.zip",
   "branding": {
     "name": "TruvantaAI",
     "tagline": "Real-time fake news detection powered by AI",
-    "primary_color": "#fbbf24",
-    "secondary_color": "#f59e0b"
+    "primary_color": "#ededef",
+    "secondary_color": "#ffc53d"
   }
 }

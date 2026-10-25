@@ -336,8 +336,8 @@ function showSuccess(msg) {
   const el = document.getElementById("error-box");
   el.textContent = msg;
   el.style.display = "block";
-  el.style.background = "rgba(110,231,183,0.07)";
-  el.style.borderColor = "rgba(110,231,183,0.25)";
+  el.style.background = "rgba(61,214,140,0.07)";
+  el.style.borderColor = "rgba(61,214,140,0.25)";
   el.style.color = "var(--real)";
 }
 

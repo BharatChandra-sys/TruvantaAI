@@ -1,17 +1,15 @@
 {
-  "version": "2.6.2",
-  "downloadUrl": "/truvanta-v2.6.2.zip",
-  "releaseDate": "2026-10-24",
+  "version": "2.6.3",
+  "downloadUrl": "/truvanta-v2.6.3.zip",
+  "releaseDate": "2026-10-25",
   "changelog": [
-    "Real-time streaming fact-checking with Server-Sent Events",
-    "Progressive results display (sources appear as found)",
-    "Early fact-check matches show in ~1 second",
-    "Full verdict in 4.5s for fresh claims, instant for cached",
-    "Fixed 2-second localhost stall on Windows",
-    "Dynamic AI model discovery (no more hardcoded models)",
-    "Self-healing model registry with automatic failover",
-    "Fixed verdict contradicting evidence bug",
-    "Fixed citation numbering mismatches"
+    "Sign-in required for checks, with automatic resume after signing in",
+    "Redesigned popup and in-page card with a calmer, neutral look",
+    "Past chats reopen with their messages and fact-check cards",
+    "Smarter search queries and more free sources (Google News, Bing News, PubMed)",
+    "Low-reliability sources are labelled and weighted down",
+    "No sources found now gives 'Uncertain' instead of a guess",
+    "Themed scrollbars; toolbar no longer overlaps an open card"
   ],
   "minimumBrowserVersion": {
     "chrome": "88",
