@@ -187,6 +187,7 @@
     .src-name { flex: 1; min-width: 0; font-size: 12px; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .src-domain { flex: none; max-width: 40%; font-family: var(--mono); font-size: 11px; color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .empty { font-size: 12px; color: var(--fg-3); }
+    .basis { margin-top: 12px; padding: 8px 10px; border-radius: 8px; background: var(--panel-2); font-size: 12px; line-height: 1.5; color: var(--fg-3); }
 
     .error { font-size: 13px; line-height: 1.5; color: var(--fg-2); }
     .retry {
@@ -778,14 +779,23 @@
       box.appendChild(stagger(bar, step++));
       requestAnimationFrame(() => requestAnimationFrame(() => { fill.style.transform = `scaleX(${pct / 100})`; }));
 
-      const sources = collectSources(data);
-      setMeta(sources.length === 1 ? "1 source" : `${sources.length} sources`);
+      // Nothing found addressed the claim: the verdict comes from established
+      // knowledge, so don't present unrelated search results as its evidence.
+      const fromKnowledge = data.basis === "knowledge";
+      const sources = fromKnowledge ? [] : collectSources(data);
+      setMeta(fromKnowledge ? "no sources" : sources.length === 1 ? "1 source" : `${sources.length} sources`);
       if (summaryText) {
         const p = el("p", "summary");
         // Keep [n] only for sources listed below the summary.
         const shown = summaryText.replace(/\s*\[(\d+)\]/g, (m, n) => (Number(n) <= sources.length ? m : ""));
         p.innerHTML = richText(shown);
         box.appendChild(stagger(p, step++));
+      }
+      if (fromKnowledge) {
+        box.appendChild(stagger(el("p", "basis", "No sources found for this claim. This answer is from established knowledge, so confidence is capped at 70%. Check recent claims elsewhere."), step++));
+        card.history.push({ role: "assistant", content: summaryText });
+        showFoot();
+        return;
       }
       const list = el("div", "rows sources");
       if (sources.length) {

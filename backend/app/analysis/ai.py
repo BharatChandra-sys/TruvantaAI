@@ -608,6 +608,54 @@ def _first_hedged(providers) -> Optional[dict]:
     return None
 
 
+KNOWLEDGE_PROMPT = """You are a professional fact-checker. No sources could be found for this claim, so judge it from well-established knowledge. Today's date is {today}.
+
+Respond with ONLY a JSON object, no markdown:
+{{
+  "verdict": "real" | "fake" | "uncertain",
+  "confidence": <float 0.0-1.0>,
+  "explanation": "<1-3 short sentences giving the established fact the verdict rests on>"
+}}
+
+Rules:
+- Answer "real" or "fake" only for settled facts: science, history, geography, well-documented events.
+- Answer "uncertain" for anything recent, local, about a specific person's current status, a statistic you are not sure of, or that you cannot place. A wrong answer is worse than "uncertain".
+- No citations, no disclaimers, no mention of sources. Be calm and factual."""
+
+# A verdict from the model's own knowledge is never presented as near-certain.
+KNOWLEDGE_MAX_CONFIDENCE = 0.7
+
+
+def run_knowledge_analysis(claim: str) -> Optional[dict]:
+    """
+    Verdict when no source addresses the claim: the model's established
+    knowledge, capped in confidence. Returns None when no provider answers.
+    """
+    from datetime import date
+    system = KNOWLEDGE_PROMPT.format(today=date.today().isoformat())
+    result = _first_hedged(_grounded_providers(system, f"Claim: {claim}"))
+    if not result:
+        return None
+    verdict = str(result.get("verdict", "uncertain")).lower().strip()
+    if verdict not in ("real", "fake", "uncertain"):
+        verdict = "uncertain"
+    try:
+        conf = max(0.0, min(1.0, float(result.get("confidence", 0.5))))
+    except (TypeError, ValueError):
+        conf = 0.5
+    if verdict == "uncertain":
+        conf = 0.5
+    else:
+        conf = round(min(KNOWLEDGE_MAX_CONFIDENCE, max(0.55, conf)), 2)
+    return {
+        "verdict": verdict,
+        "confidence": conf,
+        "explanation": _CITATION.sub("", str(result.get("explanation", ""))).strip(),
+        "ai_score": _verdict_to_score(verdict),
+        "model": result.get("_model") or result.get("_source"),
+    }
+
+
 def run_grounded_analysis(claim: str, passages: List[dict]) -> Optional[dict]:
     """
     Verdict from retrieved passages. Returns None when no provider answers,

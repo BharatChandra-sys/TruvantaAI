@@ -1,248 +1,74 @@
 <!-- Copyright 2027 Bodapati Bharat Chandra. All rights reserved. -->
 <!-- Licensed under the Apache License, Version 2.0 | SPDX-License-Identifier: Apache-2.0 -->
 
-# Contributing to TruvantaAI
+# Contributing to Truvanta
 
-We welcome contributions from the community! This guide will help you get started with contributing to TruvantaAI.
+Thanks for helping. This page gets you from a fresh clone to a working change in about ten minutes.
 
-## 🚀 Quick Start
+## Set up
 
-1. **Fork the repository**
-   ```bash
-   git clone https://github.com/yourusername/fake-news-extension.git
-   cd fake-news-extension
-   ```
+### Backend
 
-2. **Set up development environment**
-   ```bash
-   # Backend setup
-   cd backend
-   python -m venv .venv
-   source .venv/bin/activate  # Windows: .venv\Scripts\activate
-   pip install -r requirements.txt
-   pip install -r requirements-dev.txt  # Development dependencies
-   ```
+With Python 3.11:
 
-3. **Run tests**
-   ```bash
-   pytest tests/ -v --cov=app
-   ```
-
-## 📋 Development Guidelines
-
-### Code Standards
-- **Python**: Follow PEP 8, use type hints, docstrings for public functions
-- **JavaScript**: ES6+, consistent naming, JSDoc for complex functions  
-- **Test Coverage**: Minimum 90% for new code
-- **Performance**: No regressions in API response times
-
-### Commit Convention
-We use [Conventional Commits](https://www.conventionalcommits.org/):
-
-```
-feat: add multimodal analysis support
-fix: resolve JWT token expiration issue  
-docs: update API documentation
-test: add integration tests for ML routing
-perf: optimize database query performance
-refactor: simplify authentication middleware
-```
-
-### Branch Strategy
-- `main` - Production-ready code
-- `develop` - Integration branch for features
-- `feature/description` - New features
-- `fix/description` - Bug fixes
-- `hotfix/description` - Critical production fixes
-
-## 🧪 Testing Requirements
-
-### Backend Testing
 ```bash
-# Unit tests
-pytest tests/unit/ -v
-
-# Integration tests  
-pytest tests/integration/ -v
-
-# Load testing
-locust -f tests/load_test.py --host=http://localhost:8000
-
-# Security testing
-bandit -r app/
-safety check
+cd backend
+python -m venv .venv
+.venv\Scripts\activate            # Windows
+# source .venv/bin/activate       # macOS / Linux
+pip install -r requirements.txt
+cp .env.example .env
+uvicorn app.main:app --reload --port 8000
 ```
 
-### Extension Testing
+Without a `DATABASE_URL` the backend uses a local SQLite file; vectors are then stored as JSON and similarity search is skipped, everything else works. All the keys are free. The ones that matter:
+
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL` | PostgreSQL connection string. Use a development database, never production. |
+| `JWT_SECRET` | Signing key for login tokens (`openssl rand -hex 32`) |
+| `GROQ_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY` | Language model providers; any one is enough |
+| `GOOGLE_FACTCHECK_API_KEY` | Published fact-checks (free Google Cloud key, no billing needed) |
+| `GOOGLE_CLIENT_ID` | Google sign-in |
+| `NEWS_REGION`, `NEWS_LANG`, `NEWS_CEID` | Google News edition, default India (`IN`, `en-IN`, `IN:en`) |
+| `REDIS_ENABLED`, `REDIS_URL` | Optional shared cache and rate limits |
+| `TAVILY_API_KEY` | Optional extra web search |
+| `BREVO_API_KEY`, `SMTP_USER` | Password-reset email |
+
+### Extension
+
+1. In `extension/env.js`, set `USE_LOCAL_BACKEND = true`.
+2. Open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked** and choose the `extension` folder.
+3. After editing, reload the extension there and refresh open tabs.
+
+Set `USE_LOCAL_BACKEND` back to `false` before committing; CI checks it.
+
+## Check your change
+
 ```bash
-cd extension
-npm install
-npm test
-npm run test:e2e
+cd backend
+python -m pytest tests -q          # unit tests, about 10 seconds
+python eval/run_eval.py --limit 20 # end-to-end on 20 labelled claims, needs the server running
 ```
 
-### ML Model Testing
-```bash
-# Model accuracy validation
-python tests/test_ml_accuracy.py
+If you touch search, ranking or the verdict prompt, run the full evaluation (`python eval/run_eval.py`) before and after, and put both summaries in the pull request. A change that raises accuracy but also raises the wrong-verdict rate is not an improvement: a wrong answer costs more than an "Uncertain".
 
-# Performance benchmarking
-python tests/benchmark_ml_performance.py
-```
+CI runs the backend tests, syntax-checks every extension script and validates the manifest on each push and pull request.
 
-## 🔒 Security Guidelines
+## Pull requests
 
-### Sensitive Data
-- Never commit API keys, passwords, or secrets
-- Use environment variables for configuration
-- Sanitize all user inputs
-- Follow OWASP security guidelines
+- Branch from `main`.
+- Use conventional commit prefixes: `feat:`, `fix:`, `docs:`, `test:`, `perf:`, `refactor:`.
+- Describe what you changed and how you tested it. For UI changes, include a screenshot.
+- Never commit API keys or `.env` files.
 
-### Code Review Checklist
-- [ ] No hardcoded secrets or credentials
-- [ ] Input validation and sanitization  
-- [ ] Error handling without information leakage
-- [ ] Performance impact assessed
-- [ ] Tests cover edge cases
-- [ ] Documentation updated
+## Good places to start
 
-## 🎯 Areas for Contribution
+- **Add claims to the evaluation set** (`backend/eval/claims.jsonl`), especially recent news, non-English claims and claims that should come back Uncertain.
+- **Detect non-claims** (song titles, headings, opinions) before searching, so they get a clear "not a factual claim" message.
+- **A new free evidence source** in `backend/app/analysis/search.py`, behind the existing circuit breaker.
+- **Firefox support** for the extension.
 
-### High Priority
-- **ML Model Improvements**: Better accuracy, faster inference
-- **Multi-language Support**: Translation and localization
-- **Performance Optimization**: Caching, query optimization
-- **Security Enhancements**: Additional authentication methods
+## Reporting bugs
 
-### Medium Priority  
-- **UI/UX Improvements**: Better user experience
-- **API Enhancements**: New endpoints, better documentation
-- **Integration Support**: New platform connectors
-- **Monitoring & Analytics**: Better observability
-
-### Documentation
-- Code examples and tutorials
-- Architecture documentation
-- Deployment guides
-- API reference improvements
-
-## 📝 Pull Request Process
-
-1. **Create feature branch**
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-2. **Make changes with tests**
-   - Write code following our standards
-   - Add comprehensive tests
-   - Update documentation
-
-3. **Run validation**
-   ```bash
-   # Run full test suite
-   make test-all
-   
-   # Check code quality
-   make lint
-   ```
-
-4. **Submit pull request**
-   - Clear title and description
-   - Reference related issues
-   - Include performance impact
-   - Add screenshots for UI changes
-
-5. **Code review process**
-   - Automated checks must pass
-   - At least 2 reviewer approvals
-   - Performance regression testing
-   - Security review for sensitive changes
-
-## 🐛 Bug Reports
-
-### Before Reporting
-- Search existing issues
-- Test with latest version
-- Reproduce with minimal example
-
-### Bug Report Template
-```markdown
-**Description**
-Clear description of the bug
-
-**Steps to Reproduce**
-1. Go to...
-2. Click on...
-3. See error
-
-**Expected Behavior**
-What should happen
-
-**Actual Behavior**  
-What actually happens
-
-**Environment**
-- Browser: Chrome 120
-- Extension version: 2.6.1
-- OS: Windows 11
-
-**Additional Context**
-Screenshots, console logs, etc.
-```
-
-## 💡 Feature Requests
-
-### Feature Request Template
-```markdown
-**Problem Statement**
-What problem does this solve?
-
-**Proposed Solution**
-How would you like it to work?
-
-**Alternatives Considered**
-Other approaches you've thought about
-
-**Impact**
-Who benefits and how?
-
-**Implementation Notes**
-Technical considerations, if any
-```
-
-## 📚 Development Resources
-
-### Architecture Overview
-- [INFRASTRUCTURE_PLAN.md](INFRASTRUCTURE_PLAN.md) - Deployment architecture
-- `backend/app/` - FastAPI application structure
-- `extension/` - Chrome extension code
-
-### Key Technologies
-- **Backend**: FastAPI, SQLAlchemy, Alembic, PyTorch
-- **Database**: PostgreSQL with FTS5 search
-- **ML**: Transformers, scikit-learn, custom models  
-- **Infrastructure**: Multi-cloud (Render, Heroku, Azure, HF)
-
-### Local Development URLs
-- API Server: http://localhost:8000
-- API Docs: http://localhost:8000/docs  
-- Health Check: http://localhost:8000/health
-
-## 🏆 Recognition
-
-Contributors will be:
-- Listed in CONTRIBUTORS.md
-- Mentioned in release notes
-- Invited to contributor Discord channel
-- Eligible for contributor swag
-
-## ❓ Getting Help
-
-- **Discord**: Real-time chat with maintainers
-- **GitHub Discussions**: Design discussions, Q&A
-- **Email**: technical@TruvantaAI.com for sensitive issues
-
-## 📄 License
-
-By contributing, you agree that your contributions will be licensed under the Apache License 2.0.
+Open an issue with the claim you checked, what the card showed, and what you expected. For security issues, follow [SECURITY.md](SECURITY.md) instead.

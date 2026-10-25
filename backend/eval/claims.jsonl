@@ -1,0 +1,104 @@
+{"claim": "The Great Wall of China is visible from the Moon with the naked eye.", "label": "fake", "topic": "science"}
+{"claim": "Vaccines cause autism.", "label": "fake", "topic": "health"}
+{"claim": "The MMR vaccine does not cause autism.", "label": "real", "topic": "health"}
+{"claim": "Humans only use 10 percent of their brains.", "label": "fake", "topic": "science"}
+{"claim": "Water boils at 100 degrees Celsius at sea level.", "label": "real", "topic": "science"}
+{"claim": "Lightning never strikes the same place twice.", "label": "fake", "topic": "science"}
+{"claim": "The Earth orbits the Sun once roughly every 365 days.", "label": "real", "topic": "science"}
+{"claim": "5G mobile networks spread COVID-19.", "label": "fake", "topic": "health"}
+{"claim": "COVID-19 is caused by the SARS-CoV-2 virus.", "label": "real", "topic": "health"}
+{"claim": "Drinking bleach cures COVID-19.", "label": "fake", "topic": "health"}
+{"claim": "Goldfish have a memory span of only three seconds.", "label": "fake", "topic": "science"}
+{"claim": "Bats are blind.", "label": "fake", "topic": "science"}
+{"claim": "Antibiotics do not work against viral infections like the common cold.", "label": "real", "topic": "health"}
+{"claim": "Antibiotics cure the common cold.", "label": "fake", "topic": "health"}
+{"claim": "Mount Everest is the highest mountain above sea level on Earth.", "label": "real", "topic": "geography"}
+{"claim": "The Amazon is the longest river in Africa.", "label": "fake", "topic": "geography"}
+{"claim": "The Nile flows through Egypt.", "label": "real", "topic": "geography"}
+{"claim": "Australia is both a country and a continent.", "label": "real", "topic": "geography"}
+{"claim": "Sydney is the capital of Australia.", "label": "fake", "topic": "geography"}
+{"claim": "Canberra is the capital of Australia.", "label": "real", "topic": "geography"}
+{"claim": "Mumbai is the capital of India.", "label": "fake", "topic": "geography"}
+{"claim": "New Delhi is the capital of India.", "label": "real", "topic": "geography"}
+{"claim": "The Pacific is the largest ocean on Earth.", "label": "real", "topic": "geography"}
+{"claim": "The Sahara is the largest hot desert in the world.", "label": "real", "topic": "geography"}
+{"claim": "Russia is the largest country in the world by area.", "label": "real", "topic": "geography"}
+{"claim": "Brazil's official language is Spanish.", "label": "fake", "topic": "geography"}
+{"claim": "Brazil's official language is Portuguese.", "label": "real", "topic": "geography"}
+{"claim": "Neil Armstrong was the first person to walk on the Moon in 1969.", "label": "real", "topic": "history"}
+{"claim": "The Apollo Moon landings were faked in a film studio.", "label": "fake", "topic": "history"}
+{"claim": "World War II ended in 1945.", "label": "real", "topic": "history"}
+{"claim": "The Berlin Wall fell in 1989.", "label": "real", "topic": "history"}
+{"claim": "The Titanic sank on its maiden voyage in 1912.", "label": "real", "topic": "history"}
+{"claim": "Napoleon Bonaparte was unusually short, around five feet tall.", "label": "fake", "topic": "history"}
+{"claim": "Albert Einstein failed mathematics at school.", "label": "fake", "topic": "history"}
+{"claim": "India gained independence from British rule in 1947.", "label": "real", "topic": "history"}
+{"claim": "Mahatma Gandhi was awarded the Nobel Peace Prize.", "label": "fake", "topic": "history"}
+{"claim": "Vikings wore horned helmets in battle.", "label": "fake", "topic": "history"}
+{"claim": "The Declaration of Independence of the United States was adopted in 1776.", "label": "real", "topic": "history"}
+{"claim": "Christopher Columbus proved that the Earth was round.", "label": "fake", "topic": "history"}
+{"claim": "The first iPhone was released in 2007.", "label": "real", "topic": "technology"}
+{"claim": "Bill Gates founded Apple.", "label": "fake", "topic": "technology"}
+{"claim": "Steve Jobs and Steve Wozniak co-founded Apple.", "label": "real", "topic": "technology"}
+{"claim": "Microsoft was founded by Bill Gates and Paul Allen.", "label": "real", "topic": "technology"}
+{"claim": "Tim Berners-Lee invented the World Wide Web.", "label": "real", "topic": "technology"}
+{"claim": "Al Gore invented the internet.", "label": "fake", "topic": "technology"}
+{"claim": "Python was created by Guido van Rossum.", "label": "real", "topic": "technology"}
+{"claim": "Linux was created by Bill Gates.", "label": "fake", "topic": "technology"}
+{"claim": "Google was founded by Larry Page and Sergey Brin.", "label": "real", "topic": "technology"}
+{"claim": "Facebook was founded by Elon Musk.", "label": "fake", "topic": "technology"}
+{"claim": "Elon Musk acquired Twitter in 2022.", "label": "real", "topic": "technology"}
+{"claim": "Twitter was renamed X in 2023.", "label": "real", "topic": "technology"}
+{"claim": "ChatGPT was released by Google.", "label": "fake", "topic": "technology"}
+{"claim": "ChatGPT was released by OpenAI in November 2022.", "label": "real", "topic": "technology"}
+{"claim": "Smoking tobacco increases the risk of lung cancer.", "label": "real", "topic": "health"}
+{"claim": "Cracking your knuckles causes arthritis.", "label": "fake", "topic": "health"}
+{"claim": "Eating carrots gives you night vision.", "label": "fake", "topic": "health"}
+{"claim": "Sugar makes children hyperactive.", "label": "fake", "topic": "health"}
+{"claim": "Regular physical activity lowers the risk of heart disease.", "label": "real", "topic": "health"}
+{"claim": "Vitamin C cures cancer.", "label": "fake", "topic": "health"}
+{"claim": "Insulin is used to treat type 1 diabetes.", "label": "real", "topic": "health"}
+{"claim": "Penicillin was discovered by Alexander Fleming.", "label": "real", "topic": "health"}
+{"claim": "Malaria is spread by mosquitoes.", "label": "real", "topic": "health"}
+{"claim": "HIV can be transmitted by shaking hands.", "label": "fake", "topic": "health"}
+{"claim": "Smallpox was declared eradicated by the World Health Organization in 1980.", "label": "real", "topic": "health"}
+{"claim": "Microwaving food makes it radioactive.", "label": "fake", "topic": "health"}
+{"claim": "Fluoride in drinking water at recommended levels helps prevent tooth decay.", "label": "real", "topic": "health"}
+{"claim": "Humans and dinosaurs lived at the same time.", "label": "fake", "topic": "science"}
+{"claim": "The Earth is flat.", "label": "fake", "topic": "science"}
+{"claim": "The Earth is approximately 4.5 billion years old.", "label": "real", "topic": "science"}
+{"claim": "The Sun is a star.", "label": "real", "topic": "science"}
+{"claim": "Pluto was reclassified as a dwarf planet in 2006.", "label": "real", "topic": "science"}
+{"claim": "Light travels faster than sound.", "label": "real", "topic": "science"}
+{"claim": "Sound travels faster than light.", "label": "fake", "topic": "science"}
+{"claim": "Diamonds are made of carbon.", "label": "real", "topic": "science"}
+{"claim": "Humans evolved directly from modern chimpanzees.", "label": "fake", "topic": "science"}
+{"claim": "DNA has a double helix structure.", "label": "real", "topic": "science"}
+{"claim": "Ostriches bury their heads in the sand when frightened.", "label": "fake", "topic": "science"}
+{"claim": "Bulls are enraged by the color red.", "label": "fake", "topic": "science"}
+{"claim": "Octopuses have three hearts.", "label": "real", "topic": "science"}
+{"claim": "Venus is the hottest planet in the solar system.", "label": "real", "topic": "science"}
+{"claim": "Mercury is the hottest planet in the solar system.", "label": "fake", "topic": "science"}
+{"claim": "Jupiter is the largest planet in the solar system.", "label": "real", "topic": "science"}
+{"claim": "There is no gravity on the International Space Station.", "label": "fake", "topic": "science"}
+{"claim": "Burning fossil fuels releases carbon dioxide.", "label": "real", "topic": "climate"}
+{"claim": "Global average temperatures have risen since the late 19th century.", "label": "real", "topic": "climate"}
+{"claim": "Climate change is a hoax invented by China.", "label": "fake", "topic": "climate"}
+{"claim": "Arctic sea ice extent has declined over recent decades.", "label": "real", "topic": "climate"}
+{"claim": "Volcanoes emit more carbon dioxide each year than human activity.", "label": "fake", "topic": "climate"}
+{"claim": "The Paris Agreement on climate change was adopted in 2015.", "label": "real", "topic": "climate"}
+{"claim": "The euro is the currency of Germany.", "label": "real", "topic": "economics"}
+{"claim": "The United Kingdom uses the euro as its currency.", "label": "fake", "topic": "economics"}
+{"claim": "Bitcoin was created by Satoshi Nakamoto.", "label": "real", "topic": "economics"}
+{"claim": "Bitcoin was created by Mark Zuckerberg.", "label": "fake", "topic": "economics"}
+{"claim": "The United Kingdom voted to leave the European Union in a 2016 referendum.", "label": "real", "topic": "politics"}
+{"claim": "Barack Obama was born in Kenya.", "label": "fake", "topic": "politics"}
+{"claim": "Barack Obama served two terms as President of the United States.", "label": "real", "topic": "politics"}
+{"claim": "Narendra Modi became Prime Minister of India in 2014.", "label": "real", "topic": "politics"}
+{"claim": "The United Nations was founded in 1945.", "label": "real", "topic": "politics"}
+{"claim": "Switzerland is a member of the European Union.", "label": "fake", "topic": "politics"}
+{"claim": "India is the most populous country in the world as of 2023.", "label": "real", "topic": "politics"}
+{"claim": "Chandrayaan-3 landed near the Moon's south pole in 2023.", "label": "real", "topic": "science"}
+{"claim": "The Eiffel Tower is in Rome.", "label": "fake", "topic": "geography"}
+{"claim": "The Taj Mahal is in Agra.", "label": "real", "topic": "geography"}
+{"claim": "Mount Kilimanjaro is in Kenya.", "label": "fake", "topic": "geography"}

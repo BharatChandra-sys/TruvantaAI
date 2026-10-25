@@ -1,0 +1,59 @@
+{
+  "date": "2026-10-25",
+  "claims": 104,
+  "completed": 101,
+  "errors": 3,
+  "accuracy_when_decided": 0.967,
+  "accuracy_overall": 0.846,
+  "uncertain_rate": 0.099,
+  "wrong_rate": 0.029,
+  "with_sources": 0.851,
+  "with_factcheck": 0.337,
+  "grounded": 0.802,
+  "first_source_ms_p50": 1640,
+  "first_source_ms_p95": 1891,
+  "verdict_ms_p50": 4735,
+  "verdict_ms_p95": 6937,
+  "by_topic": {
+    "science": {
+      "n": 22,
+      "correct": 20,
+      "uncertain": 1
+    },
+    "health": {
+      "n": 20,
+      "correct": 16,
+      "uncertain": 3
+    },
+    "geography": {
+      "n": 16,
+      "correct": 15,
+      "uncertain": 1
+    },
+    "history": {
+      "n": 12,
+      "correct": 10,
+      "uncertain": 2
+    },
+    "technology": {
+      "n": 14,
+      "correct": 13,
+      "uncertain": 0
+    },
+    "climate": {
+      "n": 6,
+      "correct": 4,
+      "uncertain": 2
+    },
+    "economics": {
+      "n": 4,
+      "correct": 3,
+      "uncertain": 1
+    },
+    "politics": {
+      "n": 7,
+      "correct": 7,
+      "uncertain": 0
+    }
+  }
+}

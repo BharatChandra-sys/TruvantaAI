@@ -669,12 +669,25 @@ def reconcile(verdict: str, confidence: float, articles: List[dict]):
     "uncertain" while every source they cite points one way; in that case the
     evidence decides, at moderate confidence. A published fact-check only
     counts when the model itself judged it to be about this claim.
+
+    The reverse slip happens too: a firm verdict that the model's own source
+    judgements contradict. Then the evidence wins, and a relevant published
+    fact-check rated the other way makes the answer uncertain.
     """
-    if verdict != "uncertain":
-        return verdict, confidence
     # Low-reliability results can't settle a verdict on their own.
     support = [a for a in articles if a.get("model_stance") == "support" and not a.get("low_trust")]
     refute = [a for a in articles if a.get("model_stance") == "contradict" and not a.get("low_trust")]
+
+    if verdict in ("real", "fake"):
+        agree, against = (support, refute) if verdict == "real" else (refute, support)
+        if not agree and len(against) >= 2:
+            return ("fake" if verdict == "real" else "real"), 0.8
+        rated_against = "contradict" if verdict == "real" else "support"
+        if any(a.get("kind") == "fact_check" and a.get("stance") == rated_against
+               and a.get("model_stance") != "neutral" for a in articles):
+            return "uncertain", 0.5
+        return verdict, confidence
+
     fc_refutes = any(a.get("kind") == "fact_check" and a.get("stance") == "contradict"
                      and a.get("model_stance") == "contradict" for a in articles)
     fc_supports = any(a.get("kind") == "fact_check" and a.get("stance") == "support"

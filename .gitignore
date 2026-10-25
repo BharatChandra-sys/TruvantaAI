@@ -110,6 +110,7 @@ test_*.json
 
 # Test files
 test_*.py
+!backend/tests/test_*.py
 *_test.py
 comprehensive_test.py
 test_api.py
@@ -254,3 +255,6 @@ yarn.lock
 # backend/data/model.joblib
 # backend/data/vectorizer.joblib
 # backend/data/meta_model.joblib
+
+# Evaluation: per-claim runs stay local, the summary is published
+backend/eval/results/*.jsonl

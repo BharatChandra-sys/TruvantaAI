@@ -79,7 +79,7 @@ def _persist(claim: str, result: dict, user_id):
 
 
 def _run(claim: str, user_id):
-    from app.analysis.ai import run_ai_analysis, run_grounded_analysis
+    from app.analysis.ai import run_grounded_analysis, run_knowledge_analysis
     from app.analysis.evidence import _rating_stance
     from app.analysis.search import iter_search, reconcile, to_evidence, verdict_without_model
 
@@ -124,11 +124,22 @@ def _run(claim: str, user_id):
             verdict, confidence = reconcile(verdict, confidence, articles)
             ai_score, model = grounded["ai_score"], grounded.get("model")
         else:
-            # No sources, or no model answered. Never fall back to the model's memory:
-            # it doesn't know recent events and would answer confidently anyway.
+            # No sources, or no model answered: a published fact-check can still decide.
             verdict, confidence, explanation = verdict_without_model(passages, articles)
             ai_score = {"fake": 0.85, "real": 0.15}.get(verdict, 0.5)
             model = None
+
+        # Nothing found addresses the claim (as opposed to sources that disagree):
+        # answer from established knowledge, capped, and labelled as such in the card.
+        # Skipped when sources exist but no model answered, since it would fail too.
+        basis = "sources"
+        addressed = any(a.get("model_stance") in ("support", "contradict") for a in articles)
+        if verdict == "uncertain" and not addressed and (grounded or not passages):
+            knowledge = run_knowledge_analysis(text)
+            if knowledge and knowledge["verdict"] != "uncertain":
+                verdict, confidence = knowledge["verdict"], knowledge["confidence"]
+                explanation, ai_score, model = knowledge["explanation"], knowledge["ai_score"], knowledge["model"]
+                basis = "knowledge"
 
         result = {
             "is_claim": True,
@@ -140,9 +151,10 @@ def _run(claim: str, user_id):
             "evidence_score": ev_score,
             "ai_score": ai_score,
             "model": model,
-            "grounded": bool(grounded),
+            "grounded": bool(grounded) and basis == "sources",
+            "basis": basis,
         }
-        if grounded or articles:
+        if grounded or articles or basis == "knowledge":
             cache.set(cache_key, result, STREAM_CACHE_TTL)
         yield _sse("verdict", result)
         yield _sse("done", {"ms": round((time.monotonic() - t0) * 1000)})

@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: CI
 
 on:
   push:
@@ -7,178 +7,73 @@ on:
     branches: [ main ]
 
 jobs:
-  test-backend:
+  backend:
+    name: Backend tests
     runs-on: ubuntu-latest
-    
-    services:
-      postgres:
-        image: postgres:15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11.9'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Run tests
+        working-directory: backend
         env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: test_db
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-        ports:
-          - 5432:5432
+          DATABASE_URL: sqlite:///./test.db
+          JWT_SECRET: ci-only-secret
+          SKIP_TRAIN_ON_STARTUP: "true"
+          REDIS_ENABLED: "false"
+          ENVIRONMENT: test
+        run: pytest tests -q
 
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11.9'
-    
-    - name: Cache dependencies
-      uses: actions/cache@v3
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('backend/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-    
-    - name: Install dependencies
-      working-directory: backend
-      run: |
-        pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest pytest-cov pytest-asyncio httpx
-    
-    - name: Run tests
-      working-directory: backend
-      env:
-        DATABASE_URL: postgresql://postgres:postgres@localhost:5432/test_db
-        JWT_SECRET: test-secret-key-for-ci-cd-pipeline
-        SKIP_TRAIN_ON_STARTUP: "true"
-        REDIS_ENABLED: "false"
-        ENVIRONMENT: test
-      run: |
-        pytest tests/ -v --cov=app --cov-report=xml --cov-report=term-missing || echo "⚠️ Tests failed - check logs"
-      continue-on-error: true
-    
-    - name: Upload coverage
-      uses: codecov/codecov-action@v3
-      if: always()
-      with:
-        file: ./backend/coverage.xml
-        flags: backend
-        fail_ci_if_error: false
-
-  lint-backend:
+  extension:
+    name: Extension checks
     runs-on: ubuntu-latest
-    
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11.9'
-        
-    - name: Install linting tools
-      run: |
-        pip install flake8 black isort
-        
-    - name: Run flake8
-      working-directory: backend
-      run: |
-        flake8 app/ --count --select=E9,F63,F7,F82 --show-source --statistics || echo "⚠️ Linting issues found"
-      continue-on-error: true
+      - uses: actions/checkout@v4
 
-  test-extension:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '18'
-    
-    - name: Check if package.json exists
-      id: check_package
-      working-directory: extension
-      run: |
-        if [ -f package.json ]; then
-          echo "exists=true" >> $GITHUB_OUTPUT
-        else
-          echo "exists=false" >> $GITHUB_OUTPUT
-        fi
-        
-    - name: Install dependencies
-      if: steps.check_package.outputs.exists == 'true'
-      working-directory: extension
-      run: npm ci || npm install
-        
-    - name: Run extension tests
-      if: steps.check_package.outputs.exists == 'true'
-      working-directory: extension
-      run: npm test || echo "⚠️ Extension tests not configured"
-      continue-on-error: true
-        
-    - name: Lint extension code
-      if: steps.check_package.outputs.exists == 'true'
-      working-directory: extension
-      run: npm run lint || echo "⚠️ Linting not configured"
-      continue-on-error: true
-    
-    - name: Skip extension tests
-      if: steps.check_package.outputs.exists == 'false'
-      run: echo "ℹ️ No package.json found - skipping extension tests"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
-  security-scan:
-    runs-on: ubuntu-latest
-    
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11.9'
-        
-    - name: Install security tools
-      run: pip install bandit safety
-        
-    - name: Run Bandit security scan
-      working-directory: backend
-      run: |
-        bandit -r app/ -f json -o bandit-report.json -ll || echo "⚠️ Security issues found"
-      continue-on-error: true
-        
-    - name: Check dependencies for vulnerabilities
-      working-directory: backend
-      run: |
-        safety check --json --output safety-report.json || echo "⚠️ Vulnerable dependencies found"
-      continue-on-error: true
-    
-    - name: Upload security reports
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: security-reports
-        path: |
-          backend/bandit-report.json
-          backend/safety-report.json
+      - name: Syntax-check every script
+        run: find extension -name '*.js' -not -path '*/node_modules/*' -print0 | xargs -0 -n1 node --check
 
-  build-check:
+      - name: Validate manifest
+        run: |
+          node -e '
+            const m = require("./extension/manifest.json");
+            if (m.manifest_version !== 3) throw new Error("manifest_version must be 3");
+            if (!/^\d+\.\d+\.\d+$/.test(m.version)) throw new Error("bad version " + m.version);
+            console.log("manifest ok, version", m.version);
+          '
+
+      - name: Production backend is selected
+        run: grep -q 'USE_LOCAL_BACKEND = false' extension/env.js
+
+  security:
+    name: Security scan (report only)
     runs-on: ubuntu-latest
-    
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11.9'
-        
-    - name: Test build process
-      working-directory: backend
-      run: |
-        pip install --upgrade pip
-        pip install -r requirements.txt
-        echo "✅ Build simulation successful"
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11.9'
+
+      - name: Bandit
+        run: |
+          pip install bandit
+          bandit -r backend/app -ll -f json -o bandit-report.json || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: security-report
+          path: bandit-report.json
