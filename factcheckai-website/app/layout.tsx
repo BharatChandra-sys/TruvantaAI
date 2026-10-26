@@ -7,39 +7,85 @@ import StructuredData from "@/components/StructuredData";
 export const metadata: Metadata = {
   metadataBase: new URL('https://truvantaai.tech'),
   title: {
-    default: "TruvantaAI - AI-Powered Fact Verification Extension | Stop Misinformation",
-    template: "%s | TruvantaAI"
+    default: "Truvanta AI - Real-Time Fact Checker Extension | Stop Fake News & Misinformation",
+    template: "%s | Truvanta AI"
   },
-  description: "TruvantaAI is a powerful browser extension that verifies claims in real-time using advanced AI models. Detect fake news, misinformation, and false claims instantly while browsing. Free fact-checking tool with evidence-based verification.",
+  description: "Truvanta AI verifies claims instantly using advanced machine learning and real-time evidence retrieval. Detect fake news, misinformation, and false claims with AI-powered fact-checking. Free browser extension for Chrome, Edge & Brave with source-grounded verdicts.",
   keywords: [
+    // Core product terms
     "fact check",
     "fact checker",
     "truvanta ai",
     "truvantaai",
-    "fact checking",
+    "fact checking extension",
     "ai fact checker",
+    "real-time fact checking",
+    
+    // Problem & solution
     "fake news detector",
     "misinformation detector",
+    "disinformation detection",
+    "false claim detector",
     "truth verification",
     "claim verification",
-    "browser extension",
-    "chrome extension",
-    "edge extension",
-    "real-time fact checking",
+    "verify news",
+    "stop fake news",
+    
+    // Technology terms
     "ai verification",
-    "fake news",
-    "disinformation",
+    "machine learning fact check",
+    "nlp fact checking",
+    "automated fact checking",
+    "source grounded verification",
+    "evidence based fact checking",
+    "rag fact checker",
+    "hybrid retrieval",
+    
+    // Browser & platform
+    "browser extension",
+    "chrome extension fact check",
+    "edge extension",
+    "brave browser extension",
+    "chromium extension",
+    
+    // Use cases & domains
     "media literacy",
+    "news verification",
+    "social media fact check",
+    "health misinformation",
+    "political fact check",
+    "scientific claim verification",
+    "covid fact check",
+    "climate fact check",
+    
+    // Features
     "source verification",
-    "evidence based",
-    "credibility assessment"
+    "credibility assessment",
+    "citation validation",
+    "evidence retrieval",
+    "confidence scoring",
+    "transparency fact checking",
+    
+    // Geographic relevance
+    "fact checker india",
+    "fact check tool usa",
+    "global fact checking",
+    "multilingual fact check",
+    "international news verification",
+    
+    // Competition & alternatives
+    "snopes alternative",
+    "politifact extension",
+    "factcheck.org alternative",
+    "open source fact checker",
+    "free fact checking tool"
   ],
-  authors: [{ name: "TruvantaAI Team", url: "https://truvantaai.tech" }],
-  creator: "TruvantaAI",
-  publisher: "TruvantaAI",
-  applicationName: "TruvantaAI",
+  authors: [{ name: "Truvanta AI Team", url: "https://truvantaai.tech" }],
+  creator: "Truvanta AI",
+  publisher: "Truvanta AI",
+  applicationName: "Truvanta AI",
   category: "productivity",
-  classification: "Browser Extension",
+  classification: "Browser Extension - AI Fact Verification",
   robots: {
     index: true,
     follow: true,
@@ -55,23 +101,24 @@ export const metadata: Metadata = {
     type: "website",
     locale: "en_US",
     url: "https://truvantaai.tech",
-    siteName: "TruvantaAI",
-    title: "TruvantaAI - AI-Powered Fact Verification Extension",
-    description: "Verify claims instantly with our AI-powered browser extension. Stop misinformation before it spreads. Evidence-based fact-checking at your fingertips.",
+    siteName: "Truvanta AI",
+    title: "Truvanta AI - Real-Time Fact Checker with Source-Grounded AI",
+    description: "Verify claims instantly with AI-powered fact-checking. Stop misinformation before it spreads. Free browser extension with evidence-based verdicts you can trust.",
     images: [
       {
         url: '/truvanta-logo-transparent.png',
         width: 1200,
         height: 630,
-        alt: 'TruvantaAI - AI-Powered Fact Verification',
+        alt: 'Truvanta AI - AI-Powered Real-Time Fact Verification Extension',
       },
     ],
   },
   twitter: {
     card: "summary_large_image",
-    title: "TruvantaAI - AI-Powered Fact Verification",
-    description: "Verify claims instantly. Stop misinformation. Free AI-powered browser extension.",
+    title: "Truvanta AI - Stop Fake News with AI Fact-Checking",
+    description: "Verify claims instantly. Stop misinformation. Free AI-powered browser extension with transparent, source-grounded verdicts.",
     images: ['/truvanta-logo-transparent.png'],
+    creator: "@truvantaai",
   },
   icons: {
     icon: [
@@ -87,6 +134,11 @@ export const metadata: Metadata = {
   manifest: '/manifest.json',
   alternates: {
     canonical: 'https://truvantaai.tech',
+    languages: {
+      'en-US': 'https://truvantaai.tech',
+      'en-GB': 'https://truvantaai.tech',
+      'en-IN': 'https://truvantaai.tech',
+    },
   },
   other: {
     'google-site-verification': 'google5834a36d31acb362',
