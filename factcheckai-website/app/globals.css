@@ -175,6 +175,8 @@
     width: max-content;
     animation: marquee 48s linear infinite;
   }
+  @keyframes loader-in { to { opacity: 1; } }
+
   /* Scattered evidence cards breathe slightly so the scene reads as alive. */
   .evidence-bob { animation: evidence-bob 6s ease-in-out infinite; }
   @keyframes evidence-bob {

@@ -1,10 +1,11 @@
+import LogoLoader from '@/components/LogoLoader';
+
 export default function Loading() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-surface">
-      <div className="text-center">
-        <div className="inline-block animate-spin rounded-full h-16 w-16 border-4 border-surface-container-high border-t-surface-tint mb-4"></div>
-        <p className="text-on-surface-variant text-sm">Loading...</p>
-      </div>
+    // Hidden for the first 150 ms: most pages are ready by then, and a loader that
+    // flashes for an instant feels slower than none at all.
+    <div className="flex min-h-[100svh] items-center justify-center bg-canvas opacity-0 [animation:loader-in_.2s_ease-out_.15s_forwards]">
+      <LogoLoader className="h-auto w-[min(42vw,180px)] [--tvl-start:.15s]" />
     </div>
   );
 }

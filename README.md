@@ -77,14 +77,15 @@ Real output from the evaluation run, unedited:
   <img src="docs/assets/pipeline.svg" alt="Architecture: claim intake feeds three parallel lanes (own ML models, memory and RAG retrieval, live evidence), which combine in grounded reasoning and a calibrated decision model, producing the live card, a memory write and monitoring." width="100%"/>
 </picture>
 
-1. **Key terms.** The claim is reduced to what finds evidence: names, numbers, codes and quoted phrases. No AI involved.
-2. **Search, in parallel.** Google Fact Check Tools, Google News, Bing News, Wikipedia, PubMed (for health) and web search are queried at once under a 3.5 second cap. The best pages are scraped for the paragraphs that match.
-3. **Rank.** Fact-checks first, then research, reference and news; at most two items per outlet, and a story syndicated under several URLs counts once.
-4. **Judge.** A language model reads only those numbered passages, cites each statement as `[n]` and marks every source as supporting, refuting or neutral. If its verdict disagrees with its own source judgements, or with a relevant published fact-check, the evidence wins or the answer becomes Uncertain.
-5. **No sources found.** If nothing addresses the claim, the model answers from established knowledge, capped at 70% confidence and labelled "No sources found" in the card. For anything recent or unfamiliar it says Uncertain instead.
-6. **Stream.** Sources, an early fact-check match and the verdict reach the card as they happen.
+1. **Memory.** The claim is embedded (MiniLM on ONNX, about 2 ms) and compared with past checks in pgvector while the search starts. The same claim, checked recently and backed by sources, is answered at once; sources from similar past checks are added to what the model reads. Word order, negations and numbers are checked, because embeddings alone treat "light is faster than sound" and its reverse as the same.
+2. **Key terms.** The claim is reduced to what finds evidence: names, numbers, codes and quoted phrases. No AI involved.
+3. **Search, in parallel.** Google Fact Check Tools, Google News, Bing News, Wikipedia, PubMed (for health) and web search are queried at once under a 3.5 second cap. The best pages are scraped for the paragraphs that match.
+4. **Rank.** Fact-checks first, then research, reference and news; at most two items per outlet, and a story syndicated under several URLs counts once.
+5. **Judge.** A language model reads only those numbered passages, cites each statement as `[n]` and marks every source as supporting, refuting or neutral. If its verdict disagrees with its own source judgements, or with a relevant published fact-check, the evidence wins or the answer becomes Uncertain.
+6. **No sources found.** If nothing addresses the claim, the model answers from established knowledge, capped at 70% confidence and labelled "No sources found" in the card. For anything recent or unfamiliar it says Uncertain instead.
+7. **Stream.** Sources, an early fact-check match and the verdict reach the card as they happen.
 
-The popup's chat runs a deeper pipeline on top: fine-tuned DeBERTa-v3 and RoBERTa classifiers, a pgvector memory of past checks searched with BM25 and embeddings fused by Reciprocal Rank Fusion and reranked by a cross-encoder, a nine-node LangGraph workflow, manipulation and SHAP explainability analysis, and a calibrated decision model. Drift detection, claim-velocity tracking, semantic clustering and continuous retraining run alongside. **[Architecture](docs/ARCHITECTURE.md)** covers every model, module and design decision.
+The popup's chat runs a deeper check on top: fine-tuned DeBERTa-v3 and RoBERTa classifiers for the language of misinformation, manipulation and SHAP explainability analysis, domain classification and a calibrated decision model that fuses them. Drift detection, claim-velocity tracking and continuous retraining run alongside. The repository also holds hybrid BM25 + vector retrieval with Reciprocal Rank Fusion, a cross-encoder reranker and a nine-node LangGraph workflow, which are not yet on a request path. **[Architecture](docs/ARCHITECTURE.md)** says exactly what runs where, and why.
 
 ## What a verdict means
 

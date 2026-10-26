@@ -60,7 +60,7 @@
   <!-- 3a. own models -->
   <rect class="box" x="40" y="180" width="360" height="250" rx="14"/>
   <rect class="glow g3" x="40.5" y="180.5" width="359" height="249" rx="13.5"/>
-  <text class="label mono" x="58" y="206">OWN MODELS</text>
+  <text class="label mono" x="58" y="206">OWN MODELS  &#183;  POPUP DEEP CHECK</text>
   <rect class="row" x="56" y="220" width="328" height="32" rx="8"/><text class="t" x="70" y="241">DeBERTa-v3 classifier</text><text class="m mono" x="372" y="241" text-anchor="end">96.6%</text>
   <rect class="row" x="56" y="258" width="328" height="32" rx="8"/><text class="t" x="70" y="279">RoBERTa model-a</text><text class="m mono" x="372" y="279" text-anchor="end">96.3%</text>
   <rect class="row" x="56" y="296" width="328" height="32" rx="8"/><text class="t" x="70" y="317">RoBERTa ensemble a + b</text><text class="m mono" x="372" y="317" text-anchor="end">0.6 / 0.4</text>
@@ -70,12 +70,12 @@
   <!-- 3b. memory / RAG -->
   <rect class="box" x="420" y="180" width="360" height="250" rx="14"/>
   <rect class="glow g4" x="420.5" y="180.5" width="359" height="249" rx="13.5"/>
-  <text class="label mono" x="438" y="206">MEMORY  &#183;  RAG RETRIEVAL</text>
-  <rect class="row" x="436" y="220" width="328" height="32" rx="8"/><text class="t" x="450" y="241">MiniLM sentence embeddings</text><text class="m mono" x="752" y="241" text-anchor="end">384-d</text>
-  <rect class="row" x="436" y="258" width="328" height="32" rx="8"/><text class="t" x="450" y="279">pgvector cosine search</text><text class="m mono" x="752" y="279" text-anchor="end">semantic</text>
-  <rect class="row" x="436" y="296" width="328" height="32" rx="8"/><text class="t" x="450" y="317">BM25 full-text search</text><text class="m mono" x="752" y="317" text-anchor="end">lexical</text>
-  <rect class="row" x="436" y="334" width="328" height="32" rx="8"/><text class="t" x="450" y="355">Reciprocal rank fusion</text><text class="m mono" x="752" y="355" text-anchor="end">hybrid</text>
-  <rect class="row" x="436" y="372" width="328" height="32" rx="8"/><text class="t" x="450" y="393">Cross-encoder rerank</text><text class="m mono" x="752" y="393" text-anchor="end">ms-marco</text>
+  <text class="label mono" x="438" y="206">MEMORY  &#183;  RAG, BESIDE THE SEARCH</text>
+  <rect class="row" x="436" y="220" width="328" height="32" rx="8"/><text class="t" x="450" y="241">MiniLM embeddings, ONNX</text><text class="m mono" x="752" y="241" text-anchor="end">~2 ms</text>
+  <rect class="row" x="436" y="258" width="328" height="32" rx="8"/><text class="t" x="450" y="279">pgvector nearest checks</text><text class="m mono" x="752" y="279" text-anchor="end">1 round trip</text>
+  <rect class="row" x="436" y="296" width="328" height="32" rx="8"/><text class="t" x="450" y="317">Instant answer if same claim</text><text class="m mono" x="752" y="317" text-anchor="end">guarded</text>
+  <rect class="row" x="436" y="334" width="328" height="32" rx="8"/><text class="t" x="450" y="355">Past sources join passages</text><text class="m mono" x="752" y="355" text-anchor="end">RAG</text>
+  <rect class="row" x="436" y="372" width="328" height="32" rx="8"/><text class="t" x="450" y="393">Word order, negation, numbers</text><text class="m mono" x="752" y="393" text-anchor="end">checked</text>
 
   <!-- 3c. live evidence -->
   <rect class="box" x="800" y="180" width="360" height="250" rx="14"/>
@@ -110,8 +110,8 @@
   <rect class="box" x="420" y="596" width="360" height="84" rx="14"/>
   <rect class="glow g9" x="420.5" y="596.5" width="359" height="83" rx="13.5"/>
   <text class="label mono" x="438" y="620">MEMORY WRITE</text>
-  <text class="t2" x="438" y="644">Embedded into pgvector as VERIFIED,</text>
-  <text class="t2" x="438" y="663">MODEL_ONLY or DISPUTED for future checks</text>
+  <text class="t2" x="438" y="644">Claim and sources embedded in one</text>
+  <text class="t2" x="438" y="663">transaction, VERIFIED or MODEL_ONLY</text>
 
   <rect class="box" x="800" y="596" width="360" height="84" rx="14"/>
   <rect class="glow g10" x="800.5" y="596.5" width="359" height="83" rx="13.5"/>

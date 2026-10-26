@@ -126,6 +126,13 @@
       animation: fade-up 300ms var(--ease-out) both;
     }
     .prelim-text { font-size: 12px; color: var(--fg-2); }
+    .early { margin-bottom: 12px; padding: 12px; border-radius: 10px; background: rgba(10,10,11,0.5);
+      box-shadow: inset 0 0 0 1px var(--line); animation: fade-up 300ms var(--ease-out) both; }
+    .early-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .early-tag { font-family: var(--mono); font-size: 11px; color: var(--fg-3); }
+    .early-text { margin-top: 8px; font-size: 12.5px; line-height: 1.5; color: var(--fg-2);
+      display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+    .early-note { margin-top: 12px; font-size: 12px; line-height: 1.5; color: var(--fg-3); }
     .signin { padding: 4px 0 2px; }
     .signin-title { font-size: 14px; font-weight: 600; color: var(--fg); letter-spacing: -0.01em; }
     .signin-text { margin-top: 6px; font-size: 13px; line-height: 1.5; color: var(--fg-2); }
@@ -782,8 +789,16 @@
       // Nothing found addressed the claim: the verdict comes from established
       // knowledge, so don't present unrelated search results as its evidence.
       const fromKnowledge = data.basis === "knowledge";
-      const sources = fromKnowledge ? [] : collectSources(data);
-      setMeta(fromKnowledge ? "no sources" : sources.length === 1 ? "1 source" : `${sources.length} sources`);
+      // Sources found but unread (no model free to read them): still list them.
+      const unread = fromKnowledge && data.sources_unread;
+      const sources = fromKnowledge && !unread ? [] : collectSources(data);
+      const count = sources.length === 1 ? "1 source" : `${sources.length} sources`;
+      // Answered from a recent check of the same claim: say so, and when.
+      const checked = data.memory?.checked_at ? new Date(data.memory.checked_at) : null;
+      const ago = checked ? Math.max(0, Math.round((Date.now() - checked) / 86400000)) : null;
+      setMeta(fromKnowledge && !unread ? "no sources"
+        : ago === null ? count
+        : `${count} · checked ${ago === 0 ? "today" : ago === 1 ? "yesterday" : `${ago} days ago`}`);
       if (summaryText) {
         const p = el("p", "summary");
         // Keep [n] only for sources listed below the summary.
@@ -791,7 +806,19 @@
         p.innerHTML = richText(shown);
         box.appendChild(stagger(p, step++));
       }
-      if (fromKnowledge) {
+      // Say how the sources changed the early answer, so a flip is never silent.
+      const early = card.early && VERDICT[String(card.early.verdict).toLowerCase()];
+      if (early && !fromKnowledge && !data.memory) {
+        const n = sources.length;
+        const read = `${n} source${n === 1 ? "" : "s"}`;
+        const note = early.label === v.label ? `Early answer confirmed by ${read}.`
+          : `Updated after reading ${read}. The early answer was ${early.label}.`;
+        box.appendChild(stagger(el("p", "early-note", note), step++));
+      }
+      if (unread) {
+        box.appendChild(stagger(el("p", "basis", "We found sources but couldn't read them right now. This answer is from established knowledge, so confidence is capped at 70%. Open the sources below to check."), step++));
+      }
+      if (fromKnowledge && !unread) {
         box.appendChild(stagger(el("p", "basis", "No sources found for this claim. This answer is from established knowledge, so confidence is capped at 70%. Check recent claims elsewhere."), step++));
         card.history.push({ role: "assistant", content: summaryText });
         showFoot();
@@ -842,7 +869,8 @@
     for (const a of articles) {
       if (!a || !a.url || seen.has(a.url)) continue;
       seen.add(a.url);
-      const domain = domainOf(a.url);
+      // News links can be redirects (news.google.com); `site` is the publisher.
+      const domain = a.site ? domainOf(a.site.includes("://") ? a.site : `https://${a.site}`) : domainOf(a.url);
       // Published fact-checks show their rating ("False", "Mostly true") instead of the domain.
       // Results whose "source" is just their domain read better under their page title.
       const named = a.source && a.source.toLowerCase().replace(/^www\./, "") !== domain ? a.source : a.title;
@@ -885,6 +913,7 @@
         switch (event) {
           case "sources": on.sources?.(data.items || []); break;
           case "factcheck": on.factcheck?.(data); break;
+          case "early": on.early?.(data); break;
           case "judging": on.judging?.(data.count || 0); break;
           case "verdict": finish(resolve, data); break;
           case "error": finish(reject, new Error(data?.message || "The check failed. Try again in a moment.")); break;
@@ -929,7 +958,7 @@
       if (skeleton) skeleton.replaceWith(row);
       else rows.appendChild(row);
     }
-    setScanLabel(`Searching sources · ${card.liveUrls.size} found`);
+    setScanLabel(`${card.early ? "Checking sources to confirm" : "Searching sources"} · ${card.liveUrls.size} found`);
   }
 
   // A published fact-check arrives well before the verdict: show it as an early answer.
@@ -937,13 +966,34 @@
     const box = resultEl();
     const wrap = box?.querySelector(".scan-wrap");
     if (!wrap || wrap.querySelector(".prelim")) return;
-    const cls = fc.stance === "contradict" ? "false" : fc.stance === "support" ? "true" : "unsure";
+    // Neutral colour: the rating is for the claim the fact-checker examined, which can be
+    // the opposite wording of this one ("MMR causes autism": False). The verdict reads it.
     const prelim = el("div", "prelim");
-    const chip = el("span", `chip ${cls}`);
+    const chip = el("span", "chip unsure");
     chip.append(el("i"), document.createTextNode(fc.rating || "Rated"));
-    const text = el("span", "prelim-text", `${fc.source || "A fact-checker"} rated a matching claim`);
+    const text = el("span", "prelim-text", `${fc.source || "A fact-checker"} rated a related claim`);
     prelim.append(chip, text);
-    wrap.insertBefore(prelim, wrap.firstChild);
+    const early = wrap.querySelector(".early");
+    wrap.insertBefore(prelim, early ? early.nextSibling : wrap.firstChild);
+  }
+
+  // The model's answer from established knowledge, shown while sources are read.
+  function liveEarly(e) {
+    const wrap = resultEl()?.querySelector(".scan-wrap");
+    const v = VERDICT[String(e.verdict || "").toLowerCase()];
+    if (!wrap || !v || !card) return;
+    card.early = e;
+    wrap.querySelector(".early")?.remove();
+    const pct = Math.round((Number(e.confidence) || 0) * 100);
+    const box = el("div", "early");
+    const head = el("div", "early-head");
+    const chip = el("span", `chip ${v.cls}`);
+    chip.append(el("i"), document.createTextNode(v.label));
+    head.append(chip, el("span", "early-tag", `early answer · ${pct}%`));
+    box.append(head);
+    if (e.explanation) box.append(el("p", "early-text", e.explanation));
+    wrap.insertBefore(box, wrap.firstChild);
+    setScanLabel("Checking sources to confirm");
   }
 
   function setScanLabel(text) {
@@ -998,6 +1048,8 @@
     }
     current.awaitingLogin = false;
     current.busy = true;
+    current.early = null;
+    current.liveUrls = null;
     renderScanning();
     setMeta("checking…");
     try {
@@ -1007,6 +1059,7 @@
           streamCheck(current, current.text, {
             sources: items => card === current && liveSources(items),
             factcheck: fc => card === current && liveFactcheck(fc),
+            early: e => card === current && liveEarly(e),
             judging: n => card === current && setScanLabel(n ? `Reading ${n} source${n === 1 ? "" : "s"}` : "Weighing the evidence"),
           }),
           wait(MIN_SCAN_MS),
