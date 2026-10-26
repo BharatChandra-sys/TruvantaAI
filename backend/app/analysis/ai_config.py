@@ -26,7 +26,8 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 # Model families that can't answer a chat prompt (audio, embeddings, safety
 # classifiers, image generation). Matched as substrings of the model ID.
 _NON_CHAT = ("whisper", "embed", "guard", "tts", "text-to-speech", "orpheus",
-             "playai", "imagen", "image-generation", "aqa", "transcribe", "moderation")
+             "playai", "imagen", "image-generation", "aqa", "transcribe", "moderation",
+             "lyria", "veo", "-image", "native-audio", "-live", "computer-use", "robotics")
 
 
 @lru_cache(maxsize=10)

@@ -44,7 +44,7 @@ def check(api, token, claim):
     seen = set()
     try:
         with httpx.Client(timeout=60) as c, c.stream(
-                "POST", f"{api}/check/stream", json={"message": claim, "check": True},
+                "POST", f"{api}/check/stream", json={"message": claim, "check": True, "fresh": True},
                 headers={"Authorization": f"Bearer {token}"}) as r:
             r.raise_for_status()
             event = None
@@ -65,6 +65,8 @@ def check(api, token, claim):
                         row["confidence"] = data.get("confidence")
                         row["cached"] = bool(data.get("cached"))
                         row["grounded"] = bool(data.get("grounded"))
+                        row["basis"] = data.get("basis", "sources")
+                        row["memory"] = bool(data.get("memory"))
                         row["model"] = data.get("model")
                         row["explanation"] = data.get("explanation")
                         row["top_sources"] = [a.get("source") for a in data.get("evidence_articles", [])[:3]]
@@ -108,6 +110,8 @@ def summarize(rows):
         "with_sources": round(sum(r["sources"] > 0 for r in done) / len(done), 3) if done else None,
         "with_factcheck": round(sum(r["factcheck"] for r in done) / len(done), 3) if done else None,
         "grounded": round(sum(r["grounded"] for r in done) / len(done), 3) if done else None,
+        "from_knowledge": sum(r.get("basis") == "knowledge" for r in done),
+        "from_memory": sum(bool(r.get("memory")) for r in done),
         "first_source_ms_p50": pct([r["first_source_ms"] for r in fresh], 50),
         "first_source_ms_p95": pct([r["first_source_ms"] for r in fresh], 95),
         "verdict_ms_p50": pct([r["verdict_ms"] for r in fresh], 50),
@@ -124,6 +128,8 @@ def main():
     ap.add_argument("--claims", default=os.path.join(HERE, "claims.jsonl"))
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--workers", type=int, default=3)
+    ap.add_argument("--pace", type=float, default=0,
+                    help="seconds between claims, to stay inside free model rate limits")
     args = ap.parse_args()
 
     with open(args.claims, encoding="utf-8") as f:
@@ -134,6 +140,8 @@ def main():
     token = token_for(args.api, args.email, args.password)
 
     def run(item):
+        if args.pace:
+            time.sleep(args.pace)
         row = {**item, **check(args.api, token, item["claim"])}
         mark = "ok " if row["verdict"] == item["label"] else ("?  " if row["verdict"] == "uncertain" else "BAD")
         print(f"{mark} {row['verdict'] or row['error']!s:9} {row['verdict_ms'] or '-':>6} ms  {item['claim'][:70]}",

@@ -26,9 +26,21 @@ def test_untested_models_ordered_by_capability(reg):
     assert reg.ranked("groq", ["small-7b", "big-120b", "mid-20b"]) == ["big-120b", "mid-20b", "small-7b"]
 
 
-def test_working_model_moves_ahead_of_untested(reg):
-    reg.report_success("groq", "mid-20b", 1.2)
-    assert reg.ranked("groq", ["big-120b", "mid-20b"])[0] == "mid-20b"
+def test_a_recent_success_does_not_outrank_capability(reg):
+    # A small fallback answering once during a rate limit must not keep every later request.
+    reg.report_success("groq", "small-7b", 1.2)
+    assert reg.ranked("groq", ["big-120b", "small-7b"])[0] == "big-120b"
+
+
+def test_model_with_unusable_output_is_tried_last(reg):
+    reg.report_failure("groq", "big-120b", ValueError("no JSON in output"))
+    assert reg.ranked("groq", ["big-120b", "mid-20b"]) == ["mid-20b", "big-120b"]
+
+
+def test_small_models_are_not_used_to_judge_evidence_when_larger_exist():
+    from app.analysis.model_registry import judge_models
+    assert judge_models(["allam-2-7b", "openai/gpt-oss-120b", "kimi-k2"]) == ["openai/gpt-oss-120b", "kimi-k2"]
+    assert judge_models(["llama-3.1-8b-instant"]) == []      # the provider sits out instead
 
 
 def test_decommissioned_model_is_held_and_triggers_rediscovery(reg):
@@ -102,3 +114,17 @@ def test_snapshot_reports_health(reg):
     snap = reg.snapshot()
     assert snap["groq"]["models"]["m"]["ok"] == 1
     assert snap["groq"]["models"]["m"]["latency_s"] == 0.8
+
+
+def test_model_without_free_quota_is_held_not_retried(reg):
+    from app.analysis.model_registry import ModelCallError
+    err = ModelCallError(429, "Quota exceeded for metric: generate_content_free_tier_requests, limit: 0, model: gemini-pro")
+    assert reg.report_failure("gemini", "gemini-pro", err) == "permanent"
+    busy = ModelCallError(429, "Rate limit reached for model in organization")
+    assert reg.report_failure("groq", "m-120b", busy) == "transient"
+
+
+def test_non_chat_models_are_not_discovered():
+    from app.analysis.ai_config import _chat_models
+    got = _chat_models(["gemini-3.6-flash", "lyria-3.5", "veo-3", "gemini-3.1-flash-image", "text-embedding-005"])
+    assert got == ["gemini-3.6-flash"]

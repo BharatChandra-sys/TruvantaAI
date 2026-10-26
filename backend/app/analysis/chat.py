@@ -126,7 +126,7 @@ def _call_openai_compat(url: str, key: str, model: str, messages: list, max_toke
         timeout=15
     )
     if r.status_code != 200:
-        raise ModelCallError(r.status_code, r.text[:300])
+        raise ModelCallError(r.status_code, r.text[:2000])   # full enough to classify (quota details come late)
     return r.json()["choices"][0]["message"]["content"].strip()
 
 

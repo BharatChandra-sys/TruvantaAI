@@ -13,7 +13,7 @@ import requests
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from typing import List, Optional, Tuple
 
-from app.analysis.model_registry import ModelCallError, registry, try_models
+from app.analysis.model_registry import ModelCallError, judge_models, registry, try_models
 
 logger = logging.getLogger(__name__)
 
@@ -110,7 +110,7 @@ def _call_openai_compat(url: str, key: str, model: str, text: str,
     )
     
     if r.status_code != 200:
-        raise ModelCallError(r.status_code, r.text[:300])
+        raise ModelCallError(r.status_code, r.text[:2000])   # full enough to classify (quota details come late)
     raw = r.json()["choices"][0]["message"]["content"].strip()
     return _parse_structured(raw)
 
@@ -151,7 +151,7 @@ def _call_groq(text: str) -> dict:
 def _post_json(url: str, payload: dict, timeout: int) -> dict:
     r = requests.post(url, headers={"Content-Type": "application/json"}, json=payload, timeout=timeout)
     if r.status_code != 200:
-        raise ModelCallError(r.status_code, r.text[:300])
+        raise ModelCallError(r.status_code, r.text[:2000])   # full enough to classify (quota details come late)
     return r.json()
 
 
@@ -177,8 +177,9 @@ def _is_gemma(model: str) -> bool:
 
 def _call_gemini(text: str) -> dict:
     """
-    Gemini via the web2api proxy (supports AQ. session tokens) when it is
-    reachable, otherwise Google AI Studio directly (AIza... keys only).
+    Gemini via the web2api proxy when it is reachable, otherwise Google AI
+    Studio directly. AI Studio keys come as "AIza..." or, newer, "AQ...";
+    both work with the official API.
     """
     from app.analysis.ai_config import get_api_keys, discover_gemini_proxy_models, discover_gemini_models
 
@@ -206,7 +207,7 @@ def _call_gemini(text: str) -> dict:
         except Exception as e:
             errors.append(str(e))
 
-    if key and not key.startswith("AQ."):
+    if key:
         models = [m for m in discover_gemini_models(key) if not _is_gemma(m)]
         try:
             return try_models("gemini", models, lambda m: _call_google_generate(key, m, text), limit=2)
@@ -243,8 +244,8 @@ def _call_gemma4(text: str) -> dict:
     from app.analysis.ai_config import discover_gemini_models
 
     key = _get_keys()["gemini"]
-    if not key or key.startswith("AQ."):
-        raise ValueError("Gemma needs a Google AI Studio key (AIza...)")
+    if not key:
+        raise ValueError("Gemma needs a Google AI Studio key")
     models = [m for m in discover_gemini_models(key) if _is_gemma(m)]
     return try_models("gemma", models,
                       lambda m: _call_google_generate(key, m, text, max_tokens=400, timeout=15), limit=2)
@@ -376,7 +377,7 @@ def _run_all_parallel(text: str):
     candidates = []
     if keys["gemini_proxy"] or keys["gemini"]:
         candidates.append(("gemini", _call_gemini))
-    if keys["gemini"] and not keys["gemini"].startswith("AQ."):
+    if keys["gemini"]:
         candidates.append(("gemma4", _call_gemma4))
     if keys["groq"]:
         candidates.append(("groq", _call_groq))
@@ -520,14 +521,15 @@ GROUNDED_PROMPT = """You are a professional fact-checker. Judge the claim using 
 
 Respond with ONLY a JSON object, no markdown:
 {{
-  "verdict": "real" | "fake" | "uncertain",
+  "verdict": "supported" | "refuted" | "uncertain",
   "confidence": <float 0.0-1.0>,
   "explanation": "<2-4 short sentences. Put [n] after each sentence the sources support, using the source numbers.>",
   "stances": {{"1": "support" | "refute" | "neutral", "2": ...}}
 }}
 
 Rules:
-- "real" means the sources support the claim, "fake" means they refute it, "uncertain" means they are mixed or do not settle it.
+- "supported" means the sources show the claim is true; "refuted" means they show it is false; "uncertain" means they are mixed or do not settle it.
+- Decide the verdict last, from your explanation: if your explanation says the claim is wrong, the verdict is "refuted".
 - Base the verdict on the sources. Use general knowledge only to read them correctly, never as the only reason.
 - A published fact-check rating is strong evidence, but only if it is about the same claim.
 - Sources marked "low-reliability web result" are weak: never base the verdict on them alone.
@@ -553,22 +555,30 @@ def _format_sources(passages: List[dict]) -> str:
 def _grounded_providers(system: str, user: str):
     """(registry name, callable) per provider, fastest and most reliable first."""
     from app.analysis.ai_config import (discover_groq_models, discover_openrouter_models,
-                                        discover_gemini_models)
+                                        discover_gemini_models, discover_cerebras_models)
     keys = _get_keys()
     out = []
     if keys["groq"]:
         out.append(("groq", lambda: try_models(
-            "groq", discover_groq_models(keys["groq"]),
+            "groq", judge_models(discover_groq_models(keys["groq"])),
             lambda m: _call_openai_compat(GROQ_URL, keys["groq"], m, "", timeout=10, max_tokens=700,
                                           system=system, user=user), limit=2)))
-    if keys["gemini"] and not keys["gemini"].startswith("AQ."):
+    if keys.get("cerebras"):
+        out.append(("cerebras", lambda: try_models(
+            "cerebras", judge_models(discover_cerebras_models(keys["cerebras"])),
+            lambda m: _call_openai_compat(CEREBRAS_URL, keys["cerebras"], m, "", timeout=10, max_tokens=700,
+                                          system=system, user=user), limit=2)))
+    if keys["gemini"]:
         out.append(("gemini", lambda: try_models(
-            "gemini", [m for m in discover_gemini_models(keys["gemini"]) if not _is_gemma(m)],
+            "gemini", judge_models(m for m in discover_gemini_models(keys["gemini"]) if not _is_gemma(m)),
             lambda m: _call_google_generate(keys["gemini"], m, "", max_tokens=700, timeout=10,
-                                            system=system, user=user), limit=1)))
+                                            system=system, user=user),
+            # Retired or no-free-quota models fail fast (404 / 429 limit 0) and are then
+            # held; three tries let one check step past them to a working model.
+            limit=3)))
     if keys["openrouter"]:
         out.append(("openrouter", lambda: try_models(
-            "openrouter", discover_openrouter_models(keys["openrouter"]),
+            "openrouter", judge_models(discover_openrouter_models(keys["openrouter"])),
             lambda m: _call_openai_compat(OPENROUTER_URL, keys["openrouter"], m, "", timeout=10,
                                           max_tokens=700, system=system, user=user), limit=1)))
     return [(n, fn) for n, fn in out if registry.provider_available(n)]
@@ -612,15 +622,27 @@ KNOWLEDGE_PROMPT = """You are a professional fact-checker. No sources could be f
 
 Respond with ONLY a JSON object, no markdown:
 {{
-  "verdict": "real" | "fake" | "uncertain",
+  "verdict": "true" | "false" | "uncertain",
   "confidence": <float 0.0-1.0>,
   "explanation": "<1-3 short sentences giving the established fact the verdict rests on>"
 }}
 
 Rules:
-- Answer "real" or "fake" only for settled facts: science, history, geography, well-documented events.
+- "true" means the claim is correct, "false" means it is wrong. Decide it last, from your explanation.
+- Answer "true" or "false" only for settled facts: science, history, geography, well-documented events.
 - Answer "uncertain" for anything recent, local, about a specific person's current status, a statistic you are not sure of, or that you cannot place. A wrong answer is worse than "uncertain".
 - No citations, no disclaimers, no mention of sources. Be calm and factual."""
+
+# The prompts ask for words that can't be misread: models asked for "real"/"fake"
+# sometimes answered "real" meaning "the sources are real" while explaining that
+# the claim is false. Internally the verdict stays real / fake / uncertain.
+_VERDICT_WORDS = {"supported": "real", "true": "real", "real": "real",
+                  "refuted": "fake", "false": "fake", "fake": "fake"}
+
+
+def _verdict_label(raw) -> str:
+    return _VERDICT_WORDS.get(str(raw or "").lower().strip(), "uncertain")
+
 
 # A verdict from the model's own knowledge is never presented as near-certain.
 KNOWLEDGE_MAX_CONFIDENCE = 0.7
@@ -636,9 +658,7 @@ def run_knowledge_analysis(claim: str) -> Optional[dict]:
     result = _first_hedged(_grounded_providers(system, f"Claim: {claim}"))
     if not result:
         return None
-    verdict = str(result.get("verdict", "uncertain")).lower().strip()
-    if verdict not in ("real", "fake", "uncertain"):
-        verdict = "uncertain"
+    verdict = _verdict_label(result.get("verdict"))
     try:
         conf = max(0.0, min(1.0, float(result.get("confidence", 0.5))))
     except (TypeError, ValueError):
@@ -673,9 +693,7 @@ def run_grounded_analysis(claim: str, passages: List[dict]) -> Optional[dict]:
         return None
 
     n = len(passages)
-    verdict = str(result.get("verdict", "uncertain")).lower().strip()
-    if verdict not in ("real", "fake", "uncertain"):
-        verdict = "uncertain"
+    verdict = _verdict_label(result.get("verdict"))
     try:
         conf = max(0.0, min(1.0, float(result.get("confidence", 0.5))))
     except (TypeError, ValueError):

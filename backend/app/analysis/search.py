@@ -250,8 +250,11 @@ def _google_news_feed(claim: str, lang: str, region: str, ceid: str) -> List[dic
         if source and title.endswith(f" - {source}"):
             title = title[: -len(source) - 3]
         published = _rss_date(it.findtext("pubDate"))
+        # The link is a news.google.com redirect; <source url> is the publisher's site,
+        # which the card shows and which source trust is looked up by.
+        site = (source_el.get("url") or "") if source_el is not None else ""
         out.append(_item(it.findtext("link") or "", title, f"{title}. Reported by {source} on {published}.",
-                         source, "news", published=published))
+                         source, "news", published=published, site=site))
     return out
 
 
@@ -637,8 +640,12 @@ def to_evidence(passages: List[dict], grounded: Optional[dict]):
     for old in order:
         p = passages[old - 1]
         model_stance = {"support": "support", "refute": "contradict"}.get(stances.get(old), "neutral")
-        stance = _rating_stance(p.get("rating", "")) if p["kind"] == "fact_check" else model_stance
+        # A fact-check's rating applies to the claim it examined, which may be the
+        # opposite wording; the model's reading of it against this claim wins.
+        stance = (_rating_stance(p.get("rating", "")) if p["kind"] == "fact_check" and model_stance == "neutral"
+                  else model_stance)
         url = p["url"]
+        site = p.get("site") or url           # publisher, when the link is a redirect
         articles.append({
             "title":       p.get("title", ""),
             "url":         url,
@@ -650,12 +657,13 @@ def to_evidence(passages: List[dict], grounded: Optional[dict]):
             "kind":        p.get("kind", ""),
             "cited":       old in cited,
             "model_stance": model_stance,
-            "trust_score": (max(get_trust_score(url), 0.85) if p["kind"] == "fact_check"
-                            else min(get_trust_score(url), 0.3) if p.get("low_trust")
-                            else get_trust_score(url)),
+            "trust_score": (max(get_trust_score(site), 0.85) if p["kind"] == "fact_check"
+                            else min(get_trust_score(site), 0.3) if p.get("low_trust")
+                            else get_trust_score(site)),
             "low_trust":   bool(p.get("low_trust")),
-            "trust_label": get_trust_label(url),
-            "bias_label":  get_bias_label(url),
+            "trust_label": get_trust_label(site),
+            "bias_label":  get_bias_label(site),
+            "site":        domain_of(site),
         })
 
     judged = [a for a in articles if a["stance"] != "neutral"]
@@ -671,8 +679,12 @@ def reconcile(verdict: str, confidence: float, articles: List[dict]):
     counts when the model itself judged it to be about this claim.
 
     The reverse slip happens too: a firm verdict that the model's own source
-    judgements contradict. Then the evidence wins, and a relevant published
-    fact-check rated the other way makes the answer uncertain.
+    judgements contradict. Then the evidence wins.
+
+    A fact-check's rating is not a stance on this claim: it rates the claim the
+    fact-checker examined, often the opposite wording ("MMR causes autism" rated
+    False supports "MMR does not cause autism"). Only the model's per-source
+    judgement says which way a source points here.
     """
     # Low-reliability results can't settle a verdict on their own.
     support = [a for a in articles if a.get("model_stance") == "support" and not a.get("low_trust")]
@@ -682,10 +694,6 @@ def reconcile(verdict: str, confidence: float, articles: List[dict]):
         agree, against = (support, refute) if verdict == "real" else (refute, support)
         if not agree and len(against) >= 2:
             return ("fake" if verdict == "real" else "real"), 0.8
-        rated_against = "contradict" if verdict == "real" else "support"
-        if any(a.get("kind") == "fact_check" and a.get("stance") == rated_against
-               and a.get("model_stance") != "neutral" for a in articles):
-            return "uncertain", 0.5
         return verdict, confidence
 
     fc_refutes = any(a.get("kind") == "fact_check" and a.get("stance") == "contradict"
@@ -702,25 +710,22 @@ def reconcile(verdict: str, confidence: float, articles: List[dict]):
 def verdict_without_model(passages: List[dict], articles: List[dict]):
     """
     A verdict when no language model judged the evidence. Never guesses from
-    memory: a published fact-check can decide it, otherwise it stays uncertain.
-    Returns (verdict, confidence, explanation).
+    memory, and never from a fact-check's rating alone: the rating applies to
+    the claim the fact-checker examined, which is often the opposite wording
+    ("Fossil fuels don't emit CO2": False). Returns (verdict, confidence, explanation).
     """
     if not passages:
         return ("uncertain", 0.5,
                 "We couldn't find reliable sources about this claim yet. It may be very recent, "
                 "very specific, or worded unusually. Try selecting a shorter sentence that states "
                 "one fact.")
-    checks = [a for a in articles if a.get("kind") == "fact_check"]
-    refuted = [a for a in checks if a.get("stance") == "contradict"]
-    supported = [a for a in checks if a.get("stance") == "support"]
-    if refuted and not supported:
-        a = refuted[0]
-        return ("fake", 0.75,
-                f'{a.get("source") or "A fact-checker"} rated a matching claim "{a.get("rating")}" [1].')
-    if supported and not refuted:
-        a = supported[0]
-        return ("real", 0.75,
-                f'{a.get("source") or "A fact-checker"} rated a matching claim "{a.get("rating")}" [1].')
+    check = next((a for a in articles if a.get("kind") == "fact_check"), None)
+    if check:
+        n = articles.index(check) + 1
+        return ("uncertain", 0.5,
+                f'{check.get("source") or "A fact-checker"} has rated a related claim '
+                f'"{check.get("rating")}" [{n}], but we could not weigh whether it applies to this '
+                "wording right now. Open it below to read their conclusion.")
     return ("uncertain", 0.5,
             f"We found {len(passages)} related source{'s' if len(passages) != 1 else ''} but couldn't "
             "weigh them right now. Open them below to judge for yourself.")

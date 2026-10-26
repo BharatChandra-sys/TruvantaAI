@@ -27,6 +27,16 @@ def _vector_col(dim: int = EMBEDDING_DIM):
     return Column(Text, nullable=True)  # fallback: store as JSON string
 
 
+def vector_value(vec):
+    """A vector in the form the embedding column takes: a list for pgvector, JSON text otherwise."""
+    if vec is None:
+        return None
+    if _VECTOR_AVAILABLE and PGVector is not None:
+        return list(vec)
+    import json
+    return json.dumps(list(vec))
+
+
 class VerificationStatus(str, enum.Enum):
     MODEL_ONLY      = "model_only"       # Only ML/LLM signals, no human review
     VERIFIED        = "verified"          # High confidence + trustworthy evidence
