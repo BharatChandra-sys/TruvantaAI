@@ -165,4 +165,33 @@
   .text-balance {
     text-wrap: balance;
   }
+
+  /* Endless strip: two copies of the list slide by exactly one copy's width. */
+  .marquee-mask {
+    mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  }
+  .marquee-track {
+    display: flex;
+    width: max-content;
+    animation: marquee 48s linear infinite;
+  }
+  /* Scattered evidence cards breathe slightly so the scene reads as alive. */
+  .evidence-bob { animation: evidence-bob 6s ease-in-out infinite; }
+  @keyframes evidence-bob {
+    50% { transform: translateY(-5px); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .evidence-bob { animation: none; }
+  }
+
+  .marquee-reverse { animation-direction: reverse; animation-duration: 56s; }
+  .marquee-mask:hover .marquee-track { animation-play-state: paused; }
+  @keyframes marquee {
+    to { transform: translateX(-50%); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .marquee-track { animation: none; flex-wrap: wrap; width: auto; justify-content: center; }
+    .marquee-track > ul[aria-hidden="true"] { display: none; }
+    .marquee-track > ul { flex-wrap: wrap; justify-content: center; }
+  }
 }
