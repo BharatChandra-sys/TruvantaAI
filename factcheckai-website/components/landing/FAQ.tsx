@@ -20,11 +20,11 @@ const FAQS = [
   },
   {
     q: 'Can it be wrong?',
-    a: 'Yes. No fact-checker is right every time. That's why every verdict comes with its sources and a confidence level, so you can judge the evidence yourself. When evidence is mixed or insufficient, it says "Uncertain" instead of guessing.',
+    a: "Yes. No fact-checker is right every time. That's why every verdict comes with its sources and a confidence level, so you can judge the evidence yourself. When evidence is mixed or insufficient, it says \"Uncertain\" instead of guessing.",
   },
   {
     q: 'What do you store?',
-    a: 'The claims that get checked, with their verdicts and sources, so repeat questions are answered faster. If you sign in, your history is kept with your account. We don't run ads or sell data. The privacy policy has the details.',
+    a: "The claims that get checked, with their verdicts and sources, so repeat questions are answered faster. If you sign in, your history is kept with your account. We don't run ads or sell data. The privacy policy has the details.",
   },
   {
     q: 'Does it work in other languages?',
@@ -39,20 +39,20 @@ const FAQS = [
     a: 'Yes. The extension, backend, ML models, and decision logic are on GitHub under the Apache 2.0 license. Every search source, every algorithm, every model weight is in the repository.',
   },
   {
-    q: 'How do I know it's not biased?',
-    a: 'Truvanta doesn't take sides. It searches both mainstream and alternative sources, shows you supporting and contradicting evidence, and marks each source's stance. The decision logic uses trained models plus evidence scoring—no editorial judgment.',
+    q: "How do I know it's not biased?",
+    a: "Truvanta doesn't take sides. It searches both mainstream and alternative sources, shows you supporting and contradicting evidence, and marks each source's stance. The decision logic uses trained models plus evidence scoring—no editorial judgment.",
   },
   {
     q: 'Does it track my browsing?',
-    a: 'No. The extension only sees text you explicitly select and check. It doesn't monitor page visits, read your tabs, or track your activity. Fact-check requests go to the backend, but your browsing history never does.',
+    a: "No. The extension only sees text you explicitly select and check. It doesn't monitor page visits, read your tabs, or track your activity. Fact-check requests go to the backend, but your browsing history never does.",
   },
   {
     q: 'Can I use it for academic research?',
     a: 'Yes, but verify citations independently. Truvanta is designed for general fact-checking, not peer review. It searches PubMed for health claims and can find published research, but always check primary sources for academic work.',
   },
   {
-    q: 'What if there's no verdict?',
-    a: 'If Truvanta returns "Uncertain," it means the evidence was mixed, insufficient, or the claim isn't something that can be fact-checked (like opinions or future predictions). That's a feature, not a failure—uncertain is better than a wrong guess.',
+    q: "What if there's no verdict?",
+    a: "If Truvanta returns \"Uncertain,\" it means the evidence was mixed, insufficient, or the claim isn't something that can be fact-checked (like opinions or future predictions). That's a feature, not a failure—uncertain is better than a wrong guess.",
   },
 ];
 
