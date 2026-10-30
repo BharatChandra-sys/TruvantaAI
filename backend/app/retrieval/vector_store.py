@@ -25,8 +25,9 @@ from app.models import (
     FactCheckEvidence,
     VerificationStatus,
     EMBEDDING_DIM,
+    vector_value,
 )
-from app.retrieval.embeddings import embed
+from app.retrieval.embeddings import embed, to_pgvector
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,7 @@ def upsert_fact_check(
     # Generate embedding (cached in Redis)
     try:
         embedding_vec = embed(claim_text)
-        embedding_str = json.dumps(embedding_vec)
+        embedding_str = vector_value(embedding_vec)
     except Exception as e:
         logger.warning("Embedding failed for fact_check: %s", e)
         embedding_str = None
@@ -167,7 +168,8 @@ def upsert_evidence(
     """Insert or update an EvidenceDocument with its embedding."""
     embed_text = f"{title or ''} {content[:500] if content else ''}".strip()
     try:
-        embedding_str = json.dumps(embed(embed_text)) if embed_text else None
+        vec = embed(embed_text) if embed_text else None
+        embedding_str = vector_value(vec)
     except Exception:
         embedding_str = None
 
@@ -267,11 +269,14 @@ def search_similar_claims(
         ]
 
     query_vec = embed(claim_text)
+    if query_vec is None:
+        return []
 
     # Try pgvector cosine distance operator (<=>)
     try:
         from sqlalchemy import text as sa_text
-        vec_str = "[" + ",".join(str(round(v, 6)) for v in query_vec) + "]"
+        vec_str = to_pgvector(query_vec)
+        db.execute(sa_text("SET LOCAL ivfflat.probes = 100"))   # exact recall on small tables
         rows = db.execute(
             sa_text("""
                 SELECT id, claim_text, verdict, confidence, verification_status,
@@ -365,10 +370,13 @@ def search_evidence(
         max_tier: Only return sources up to this tier (1=best, 5=worst)
     """
     query_vec = embed(claim_text)
+    if query_vec is None:
+        return []
 
     try:
         from sqlalchemy import text as sa_text
-        vec_str = "[" + ",".join(str(round(v, 6)) for v in query_vec) + "]"
+        vec_str = to_pgvector(query_vec)
+        db.execute(sa_text("SET LOCAL ivfflat.probes = 100"))   # exact recall on small tables
         stance_filter = f"AND stance = :stance" if stance else ""
         rows = db.execute(
             sa_text(f"""

@@ -1,7 +1,7 @@
 # Copyright 2027 Bodapati Bharat Chandra. All rights reserved.
 # Licensed under the Apache License, Version 2.0
 # SPDX-License-Identifier: Apache-2.0
-# Project: TruvantaAI � https://github.com/BharatChandra-sys/fake-news-extension
+# Project: TruvantaAI – https://github.com/BharatChandra-sys/fake-news-extension
 import os
 import random
 import string
@@ -24,25 +24,21 @@ def generate_otp(length: int = 6) -> str:
     return "".join(random.choices(string.digits, k=length))
 
 
-def send_otp_email(to_email: str, otp: str) -> bool:
+def send_otp_email(to_email: str, otp: str, ip_address: str = None, location: str = None) -> bool:
     if not BREVO_API_KEY:
         raise RuntimeError("BREVO_API_KEY is not configured.")
 
-    digit_cells = "".join([
-        f"""<td style="padding:0 5px;">
-<div style="
-  width:56px;height:72px;
-  background:#f5f5f7;
-  border-radius:14px;
-  font-size:36px;font-weight:600;
-  color:#1d1d1f;
-  text-align:center;line-height:72px;
-  font-family:-apple-system,'SF Pro Display','Helvetica Neue',Helvetica,Arial,sans-serif;
-  letter-spacing:-1px;
-">{d}</div></td>"""
-        for d in otp
-    ])
+    # Format location info
+    location_text = ""
+    if ip_address or location:
+        parts = []
+        if ip_address:
+            parts.append(ip_address)
+        if location:
+            parts.append(location)
+        location_text = ", ".join(parts)
 
+    # Premium email design matching website aesthetic
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -50,82 +46,95 @@ def send_otp_email(to_email: str, otp: str) -> bool:
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Your verification code</title>
 </head>
-<body style="margin:0;padding:0;background:#ffffff;font-family:-apple-system,'SF Pro Text','Helvetica Neue',Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased;color:#1d1d1f;">
+<body style="margin:0;padding:0;background:#0a0a0b;font-family:-apple-system,'SF Pro Text','SF Pro Display',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;">
 
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff;padding:64px 24px 48px;">
+  <!-- Gmail annotation -->
+  <div itemscope itemtype="http://schema.org/EmailMessage">
+    <div itemprop="potentialAction" itemscope itemtype="http://schema.org/ViewAction">
+      <link itemprop="target" href="https://truvantaai.tech"/>
+      <meta itemprop="name" content="Code requested"/>
+    </div>
+    <meta itemprop="description" content="{otp}"/>
+  </div>
+
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0b;padding:72px 24px;">
     <tr><td align="center">
-      <table width="480" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;">
+      <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
 
-        <!-- Logo mark -->
+        <!-- Logo with glow -->
         <tr>
-          <td align="center" style="padding-bottom:40px;">
-            <div style="
-              width:56px;height:56px;
-              background:#1d1d1f;
-              border-radius:14px;
-              text-align:center;line-height:56px;
-              font-size:26px;
-            ">✓</div>
+          <td align="center" style="padding-bottom:64px;">
+            <div style="display:inline-block;position:relative;">
+              <img src="https://truvantaai.tech/truvanta-loader.svg" alt="Truvanta" width="120" height="90" style="display:block;position:relative;z-index:1;" />
+            </div>
           </td>
         </tr>
 
-        <!-- Headline -->
+        <!-- Code card with gradient border -->
         <tr>
-          <td align="center" style="padding-bottom:12px;">
-            <h1 style="margin:0;font-size:28px;font-weight:700;color:#1d1d1f;letter-spacing:-0.5px;line-height:1.2;">
-              Verify it's you
-            </h1>
+          <td style="padding:0 20px 64px;">
+            <div style="background:linear-gradient(180deg, #1f1f23 0%, #17171a 100%);border-radius:20px;padding:56px 48px;border:1px solid rgba(255,197,61,0.12);box-shadow:0 20px 40px -12px rgba(0,0,0,0.3),0 0 0 1px rgba(255,255,255,0.02) inset;">
+              <div style="margin-bottom:32px;">
+                <p style="margin:0;font-size:12px;font-weight:600;color:#ffc53d;letter-spacing:1.2px;text-transform:uppercase;text-align:center;">
+                  Verification Code
+                </p>
+              </div>
+              <div style="text-align:center;font-size:60px;font-weight:700;color:#ededef;letter-spacing:20px;font-family:'SF Mono',Monaco,Consolas,monospace;line-height:1;margin-bottom:40px;text-shadow:0 2px 12px rgba(255,197,61,0.15);">
+                {otp}
+              </div>
+              <div style="padding-top:32px;border-top:1px solid rgba(255,255,255,0.06);">
+                <p style="margin:0;font-size:15px;color:#a1a1aa;line-height:1.7;text-align:center;font-weight:400;">
+                  Enter this code to reset your password.
+                </p>
+                <p style="margin:12px 0 0;font-size:14px;color:#6b6b73;text-align:center;">
+                  Expires in <span style="color:#ffc53d;font-weight:500;">10 minutes</span>
+                </p>
+              </div>
+            </div>
           </td>
         </tr>
 
-        <!-- Subtext -->
+        <!-- Security card -->
         <tr>
-          <td align="center" style="padding-bottom:48px;">
-            <p style="margin:0;font-size:17px;color:#6e6e73;line-height:1.5;max-width:360px;">
-              Enter this code to reset your TruvantaAI password.
-              It expires in 10 minutes.
-            </p>
-          </td>
-        </tr>
-
-        <!-- OTP digits -->
-        <tr>
-          <td align="center" style="padding-bottom:48px;">
-            <table cellpadding="0" cellspacing="0">
-              <tr>{digit_cells}</tr>
-            </table>
-          </td>
-        </tr>
-
-        <!-- Divider -->
-        <tr>
-          <td style="height:1px;background:#d2d2d7;margin-bottom:32px;"></td>
-        </tr>
-
-        <!-- Security note -->
-        <tr>
-          <td align="center" style="padding-top:32px;padding-bottom:16px;">
-            <p style="margin:0;font-size:13px;color:#6e6e73;line-height:1.6;max-width:380px;">
-              Never share this code with anyone.
-              TruvantaAI will never ask for it by phone or message.
-            </p>
-          </td>
-        </tr>
-
-        <!-- Ignore note -->
-        <tr>
-          <td align="center" style="padding-bottom:48px;">
-            <p style="margin:0;font-size:13px;color:#aeaeb2;line-height:1.6;">
-              Didn't request this? Ignore this email — your account is safe.
-            </p>
+          <td style="padding:0 20px 64px;">
+            <div style="background:#17171a;border-radius:20px;padding:40px;border:1px solid rgba(255,255,255,0.05);">
+              <table width="100%" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td style="padding-bottom:24px;">
+                    <p style="margin:0;font-size:14px;color:#ededef;line-height:1.7;text-align:center;font-weight:500;">
+                       Security Notice
+                    </p>
+                  </td>
+                </tr>
+                <tr>
+                  <td style="padding-bottom:20px;">
+                    <p style="margin:0;font-size:13px;color:#a1a1aa;line-height:1.8;text-align:center;">
+                      Never share this code with anyone.<br/>We'll never ask for it by phone, text, or email.
+                    </p>
+                  </td>
+                </tr>
+                {f'<tr><td style="padding:24px 0;border-top:1px solid rgba(255,255,255,0.04);border-bottom:1px solid rgba(255,255,255,0.04);"><div style="text-align:center;"><p style="margin:0 0 8px;font-size:11px;color:#6b6b73;text-transform:uppercase;letter-spacing:0.8px;font-weight:600;">Request Origin</p><p style="margin:0;font-size:13px;color:#a1a1aa;font-family:monospace;">{location_text}</p></div></td></tr>' if location_text else ''}
+                <tr>
+                  <td style="padding-top:24px;">
+                    <p style="margin:0;font-size:12px;color:#6b6b73;line-height:1.6;text-align:center;">
+                      Didn't request this code?<br/>
+                      <span style="color:#a1a1aa;">You can safely ignore this email.</span>
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </div>
           </td>
         </tr>
 
         <!-- Footer -->
         <tr>
-          <td align="center">
-            <p style="margin:0;font-size:12px;color:#aeaeb2;letter-spacing:0.1px;">
-              TruvantaAI &nbsp;·&nbsp; © 2026
+          <td align="center" style="padding-top:16px;">
+            <p style="margin:0 0 8px;font-size:12px;color:#6b6b73;letter-spacing:0.4px;">
+              <span style="color:#ffc53d;">Truvanta</span> · Fact-checking powered by AI
+            </p>
+            <p style="margin:0;font-size:11px;color:#6b6b73;">
+              © 2026 · <a href="https://truvantaai.tech/privacy" style="color:#6b6b73;text-decoration:none;">Privacy</a>
             </p>
           </td>
         </tr>
@@ -163,7 +172,6 @@ def send_otp_email(to_email: str, otp: str) -> bool:
             logger.error("Brevo API error %d: %s", resp.status_code, resp.text)
             raise RuntimeError(f"Brevo API error {resp.status_code}: {resp.text}")
         
-        # Log the message ID from Brevo response
         try:
             response_data = resp.json()
             message_id = response_data.get("messageId", "unknown")

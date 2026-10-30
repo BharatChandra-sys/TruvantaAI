@@ -93,6 +93,42 @@ def get_current_user(
     return user
 
 
+# The signed token already proves who is calling. Confirming that the account
+# still exists costs several database round trips (~220 ms from Render to
+# Neon), so on the hot path it is confirmed at most once per user per window.
+_USER_CONFIRM_TTL_S = 300
+_confirmed_users: dict = {}
+
+
+def get_current_user_id(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> int:
+    """The caller's user id, for routes that need only the id (the live check)."""
+    import time
+    payload = decode_token(credentials.credentials)
+    try:
+        user_id = int(payload.get("sub"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+
+    now = time.monotonic()
+    if _confirmed_users.get(user_id, 0) > now:
+        return user_id
+    from database import SessionLocal
+    db = SessionLocal()
+    try:
+        exists = db.query(User.id).filter(User.id == user_id).first() is not None
+    finally:
+        db.close()
+    if not exists:
+        _confirmed_users.pop(user_id, None)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    if len(_confirmed_users) > 10000:
+        _confirmed_users.clear()
+    _confirmed_users[user_id] = now + _USER_CONFIRM_TTL_S
+    return user_id
+
+
 async def get_current_user_ws(token: str, db: Session = None) -> User:
     """
     Get the current authenticated user from JWT token for WebSocket connections.

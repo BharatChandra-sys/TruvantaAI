@@ -25,6 +25,9 @@ class MessageRequest(BaseModel):
     # The user explicitly asked for a fact-check (e.g. the extension's Check
     # button), so skip the chat-vs-claim classification step.
     check: bool = False
+    # Run the whole pipeline: no cached or remembered answer, nothing stored.
+    # Used by the evaluation, so it measures the pipeline rather than memory.
+    fresh: bool = False
 
     @field_validator("message")
     @classmethod

@@ -8,9 +8,12 @@ from database import Base
 from datetime import datetime
 import enum
 
-# pgvector — lazy import so the module loads even without pgvector installed
+# pgvector — lazy import so the module loads even without pgvector installed.
+# Embeddings are stored as halfvec (16-bit floats): half the storage and index
+# memory of vector, and cosine similarity moves by under 0.0001, far inside the
+# smallest gap between the memory thresholds and the scores they separate.
 try:
-    from pgvector.sqlalchemy import Vector as PGVector
+    from pgvector.sqlalchemy import HALFVEC as PGVector
     _VECTOR_AVAILABLE = True
 except ImportError:
     PGVector = None
@@ -21,10 +24,20 @@ EMBEDDING_DIM = 384
 
 
 def _vector_col(dim: int = EMBEDDING_DIM):
-    """Return a pgvector Column if available, else Text (serialized JSON)."""
+    """Return a pgvector halfvec Column if available, else Text (serialized JSON)."""
     if _VECTOR_AVAILABLE and PGVector is not None:
         return Column(PGVector(dim), nullable=True)
     return Column(Text, nullable=True)  # fallback: store as JSON string
+
+
+def vector_value(vec):
+    """A vector in the form the embedding column takes: a list for pgvector, JSON text otherwise."""
+    if vec is None:
+        return None
+    if _VECTOR_AVAILABLE and PGVector is not None:
+        return list(vec)
+    import json
+    return json.dumps(list(vec))
 
 
 class VerificationStatus(str, enum.Enum):

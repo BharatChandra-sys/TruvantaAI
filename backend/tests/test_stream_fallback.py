@@ -46,10 +46,58 @@ def test_mixed_sources_stay_uncertain(monkeypatch):
     grounded = {"verdict": "uncertain", "confidence": 0.5, "explanation": "Sources disagree [1][2].",
                 "stances": {1: "support", 2: "refute"}, "ai_score": 0.5, "model": "test"}
     v, calls = _verdict(monkeypatch, [PASSAGE, dict(PASSAGE, url="https://x.org/a", source="X")], grounded, KNOWS)
-    assert not calls and v["verdict"] == "uncertain" and v["basis"] == "sources"
+    # The early answer was computed, but disagreeing sources keep the verdict uncertain.
+    assert v["verdict"] == "uncertain" and v["basis"] == "sources"
 
 
 def test_model_unsure_from_knowledge_stays_uncertain(monkeypatch):
     unsure = dict(KNOWS, verdict="uncertain", confidence=0.5)
     v, _ = _verdict(monkeypatch, [], None, unsure)
     assert v["verdict"] == "uncertain" and v["basis"] == "sources"
+
+
+def test_early_answer_streams_before_the_sourced_verdict(monkeypatch):
+    import time
+    import app.analysis.ai as ai
+    import app.analysis.search as search
+    from app.routes import stream_routes
+
+    def slow_judge(claim, passages):
+        time.sleep(0.4)          # the model reading sources takes a while
+        return {"verdict": "fake", "confidence": 0.93, "explanation": "Refuted [1].",
+                "stances": {1: "refute"}, "ai_score": 0.9, "model": "test"}
+
+    monkeypatch.setattr(search, "iter_search", lambda text: iter([("done", [PASSAGE])]))
+    monkeypatch.setattr(ai, "run_grounded_analysis", slow_judge)
+    monkeypatch.setattr(ai, "run_knowledge_analysis", lambda claim: dict(KNOWS, verdict="fake", confidence=0.7))
+    monkeypatch.setattr(stream_routes, "_persist", lambda *a: None)
+
+    events = [e.split("\n", 1)[0] for e in stream_routes._run(f"claim {uuid.uuid4()}", None)]
+    assert "event: early" in events
+    assert events.index("event: early") < events.index("event: verdict")
+
+
+def test_sources_no_model_could_read_fall_back_to_the_early_answer(monkeypatch):
+    # Seen in the evaluation: every provider rate-limited, the early answer was right
+    # but the final verdict said "uncertain".
+    v, calls = _verdict(monkeypatch, [PASSAGE], None, KNOWS)
+    assert v["verdict"] == "real" and v["basis"] == "knowledge" and v["sources_unread"] is True
+    assert v["confidence"] <= 0.7
+
+
+def test_early_answer_can_be_switched_off(monkeypatch):
+    import app.analysis.ai as ai
+    import app.analysis.search as search
+    from app.routes import stream_routes
+
+    monkeypatch.setattr(stream_routes, "EARLY_ANSWER", False)
+    monkeypatch.setattr(search, "iter_search", lambda text: iter([("done", [PASSAGE])]))
+    monkeypatch.setattr(ai, "run_grounded_analysis", lambda c, p: {
+        "verdict": "fake", "confidence": 0.93, "explanation": "Refuted [1].",
+        "stances": {1: "refute"}, "ai_score": 0.9, "model": "test"})
+    calls = []
+    monkeypatch.setattr(ai, "run_knowledge_analysis", lambda c: calls.append(c) or KNOWS)
+    monkeypatch.setattr(stream_routes, "_persist", lambda *a: None)
+
+    events = [e.split("\n", 1)[0] for e in stream_routes._run(f"claim {uuid.uuid4()}", None)]
+    assert "event: early" not in events and not calls      # no extra model call at all

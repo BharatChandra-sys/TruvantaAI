@@ -35,10 +35,19 @@ def test_no_sources_never_guesses():
     assert verdict == "uncertain" and conf == 0.5 and "couldn't find" in why
 
 
-def test_fact_check_can_decide_without_a_model():
+def test_fact_check_rating_alone_never_decides():
+    # Seen in the evaluation: Snopes rated a related claim "False" and, with no model,
+    # "Burning fossil fuels releases carbon dioxide" came back False.
     articles = [{"kind": "fact_check", "stance": "contradict", "source": "Snopes", "rating": "False"}]
     verdict, conf, why = verdict_without_model([{}], articles)
-    assert verdict == "fake" and "Snopes" in why
+    assert verdict == "uncertain" and "Snopes" in why and '"False" [1]' in why
+
+
+def test_verdict_words_cannot_be_misread():
+    from app.analysis.ai import _verdict_label
+    assert _verdict_label("supported") == _verdict_label("true") == "real"
+    assert _verdict_label("Refuted") == _verdict_label("false") == "fake"
+    assert _verdict_label("maybe") == _verdict_label(None) == "uncertain"
 
 
 def test_low_trust_results_need_more_relevance():
@@ -65,16 +74,13 @@ def test_firm_verdict_that_its_own_sources_refute_is_flipped():
     assert reconcile("real", 0.97, refuting) == ("fake", 0.8)
 
 
-def test_relevant_fact_check_rated_against_the_verdict_makes_it_uncertain():
-    # Seen in the evaluation: Snopes rated the claim False, the model answered "real".
+def test_fact_check_rating_of_the_opposite_wording_does_not_undo_a_verdict():
+    # Seen in the evaluation: AFP rated "MMR causes autism" False, which supports
+    # "The MMR vaccine does not cause autism". The model's reading decides.
     from app.analysis.search import reconcile
-    arts = [{"kind": "fact_check", "stance": "contradict", "model_stance": "support"},
-            {"kind": "news", "stance": "support", "model_stance": "support"},
-            {"kind": "reference", "stance": "support", "model_stance": "support"}]
-    assert reconcile("real", 0.8, arts) == ("uncertain", 0.5)
-    # A fact-check the model judged unrelated doesn't count.
-    unrelated = [dict(arts[0], model_stance="neutral")] + arts[1:]
-    assert reconcile("real", 0.8, unrelated) == ("real", 0.8)
+    arts = [{"kind": "fact_check", "stance": "contradict", "model_stance": "support", "rating": "False"},
+            {"kind": "news", "stance": "support", "model_stance": "support"}]
+    assert reconcile("real", 0.95, arts) == ("real", 0.95)
 
 
 def test_firm_verdict_backed_by_its_sources_is_kept():
@@ -82,3 +88,41 @@ def test_firm_verdict_backed_by_its_sources_is_kept():
     arts = [{"kind": "fact_check", "stance": "contradict", "model_stance": "contradict"},
             {"kind": "news", "stance": "contradict", "model_stance": "contradict"}]
     assert reconcile("fake", 0.93, arts) == ("fake", 0.93)
+
+
+def _fc(claim_reviewed, rating, source="Snopes"):
+    return {"kind": "fact_check", "url": f"https://{source.lower()}.com/x", "title": "t", "source": source,
+            "text": "", "rating": rating, "claim_reviewed": claim_reviewed}
+
+
+def _same_vectors(monkeypatch, similarity):
+    # Every text embeds so that any two have the given cosine similarity.
+    import math
+    import app.retrieval.embeddings as e
+    a, b = [1.0, 0.0], [similarity, math.sqrt(1 - similarity ** 2)]
+    monkeypatch.setattr(e, "embed_batch", lambda texts: [a] + [b] * (len(texts) - 1))
+    monkeypatch.setattr(e, "thresholds", lambda: {"match": 0.97, "related": 0.85})
+
+
+def test_a_fact_check_of_the_same_claim_decides_without_a_model(monkeypatch):
+    from app.analysis.search import factcheck_verdict
+    _same_vectors(monkeypatch, 0.98)
+    got = factcheck_verdict("5G networks spread COVID-19.", [_fc("5G spreads the coronavirus", "False")])
+    assert got["verdict"] == "fake" and got["stances"] == {1: "refute"} and "Snopes" in got["explanation"]
+
+
+def test_a_fact_check_of_the_opposite_wording_never_decides(monkeypatch):
+    # "MMR causes autism": False must not decide "MMR does not cause autism".
+    from app.analysis.search import factcheck_verdict
+    _same_vectors(monkeypatch, 0.98)
+    assert factcheck_verdict("The MMR vaccine does not cause autism.",
+                             [_fc("The MMR vaccine causes autism", "False")]) is None
+
+
+def test_loosely_related_or_disagreeing_fact_checks_leave_it_to_the_model(monkeypatch):
+    from app.analysis.search import factcheck_verdict
+    _same_vectors(monkeypatch, 0.93)                       # same topic, not the same claim
+    assert factcheck_verdict("Pluto is a planet.", [_fc("Pluto was reclassified", "True")]) is None
+    _same_vectors(monkeypatch, 0.98)
+    assert factcheck_verdict("X is true.", [_fc("X is true", "True"), _fc("X is true", "False", "AFP")]) is None
+    assert factcheck_verdict("X is true.", [_fc("X is true", "Mixture")]) is None

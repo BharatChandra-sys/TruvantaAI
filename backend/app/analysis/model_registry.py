@@ -104,6 +104,43 @@ def capability_rank(model_id: str) -> float:
     return score
 
 
+# Below this size, models misread which way a source points often enough to
+# flip verdicts (seen in the evaluation with 7B models), so judging evidence
+# skips them whenever a larger model is available.
+JUDGE_MIN_PARAMS_B = 14
+
+
+def judge_models(models: Iterable[str]) -> List[str]:
+    """
+    Models fit to judge evidence: known-small ones dropped. When only small ones
+    are left (the larger ones rate-limited), the provider sits this one out and
+    another provider, the early answer or an honest "uncertain" takes over:
+    a 7B model's misread verdict is worse than any of those.
+    """
+    models = list(models)
+
+    def small(m: str) -> bool:
+        sizes = [float(x) for x in re.findall(r"(\d+(?:\.\d+)?)b\b", m.lower())]
+        return bool(sizes) and max(sizes) < JUDGE_MIN_PARAMS_B
+
+    return [m for m in models if not small(m)]
+
+
+def fast_models(models: Iterable[str]) -> List[str]:
+    """
+    Models for the early answer, cheapest first: small or "instant"/"lite" builds,
+    then the rest. Free-tier rate limits are per model, so early answers drawn from
+    these never use up the quota of the large models that judge the evidence.
+    """
+    def key(m: str):
+        n = m.lower()
+        sizes = [float(x) for x in re.findall(r"(\d+(?:\.\d+)?)b\b", n)]
+        quick = "instant" in n or "lite" in n
+        small = bool(sizes) and max(sizes) < JUDGE_MIN_PARAMS_B
+        return (not (quick or small), not quick, -capability_rank(m))
+    return sorted(dict.fromkeys(models), key=key)
+
+
 class ModelRegistry:
     def __init__(self):
         self._lock = threading.Lock()
@@ -132,18 +169,17 @@ class ModelRegistry:
             st = self._state(provider)
             if st.hold_until > now:
                 return []
+            # Capability decides the order. Rate limits and errors already put a
+            # model on hold, so once a hold ends the model competes at its own rank
+            # again; ranking "worked last time" first instead let a small fallback
+            # that answered once during a rate limit keep every request after it.
             ready = []
             for idx, m in enumerate(dict.fromkeys(models)):
                 h = st.models.get(m)
                 if h and h.hold_until > now:
                     continue
-                if h and h.last_ok and h.last_ok >= h.last_fail:
-                    bucket = 0                     # worked last time
-                elif h is None or (h.ok == 0 and h.fails == 0):
-                    bucket = 1                     # untested
-                else:
-                    bucket = 2                     # flaky
-                ready.append((bucket, -capability_rank(m), idx, m))
+                unusable = bool(h and h.soft_fails and h.last_fail > h.last_ok)
+                ready.append((unusable, -capability_rank(m), idx, m))
             ready.sort()
             return [m for *_, m in ready]
 
@@ -230,6 +266,9 @@ class ModelRegistry:
                 return "permanent", f"{s} {detail[:120]}"
             if s == 400 and any(h in detail for h in _PERMANENT_HINTS):
                 return "permanent", f"400 {detail[:120]}"
+            if s == 429 and "limit: 0" in detail:
+                # Not busy: this model has no quota on the key's plan, so retrying won't help.
+                return "permanent", f"429 no quota for this model on this plan"
             if s in (408, 409, 425, 429) or s >= 500:
                 return "transient", f"{s} {detail[:120]}"
             if s == 413:

@@ -112,6 +112,29 @@ logging.getLogger("uvicorn.access").addFilter(_SuppressHealthLogs())
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 
+    # Load the embedding model and open a memory read connection in the background,
+    # so the first check doesn't pay for either.
+    try:
+        from app.retrieval.memory import warm_up
+        warm_up()
+    except Exception as e:
+        logger.warning("Memory warm-up skipped: %s", e)
+    try:
+        from app.retrieval.reranker import warm_up as warm_reranker
+        warm_reranker()
+    except Exception as e:
+        logger.warning("Reranker warm-up skipped: %s", e)
+
+    # The language detector loads its profiles on first use (~300 ms); pay that now.
+    def _warm_language():
+        try:
+            from app.analysis.multilingual import detect_language
+            detect_language("Warm up the language detector before the first check.")
+        except Exception as e:
+            logger.debug("Language detector warm-up skipped: %s", e)
+    import threading as _threading
+    _threading.Thread(target=_warm_language, daemon=True, name="lang-warmup").start()
+
     # ── Step 1: Verify database connectivity ─────────────────
     # Retry up to 5 times with backoff — Neon wakes from auto-suspend in ~1s
     import time as _time
