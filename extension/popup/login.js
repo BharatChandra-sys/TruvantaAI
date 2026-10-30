@@ -107,8 +107,16 @@ async function doSignup() {
 document.getElementById("google-login-btn").addEventListener("click",  doGoogle);
 document.getElementById("google-signup-btn").addEventListener("click", doGoogle);
 
+let _googleAuthInProgress = false;
+
 async function doGoogle() {
   hideError();
+
+  // Prevent double-click / concurrent auth flows
+  if (_googleAuthInProgress) {
+    showError("Sign-in already in progress. Please wait.");
+    return;
+  }
 
   // We use launchWebAuthFlow with a redirect to our own website
   // (https://truvantaai.tech/auth/callback). This approach works for every
@@ -133,9 +141,17 @@ async function doGoogle() {
     `&scope=${encodeURIComponent("openid email profile")}` +
     `&prompt=select_account`;
 
+  // Disable button to prevent double-click
+  const googleBtns = document.querySelectorAll("#google-login-btn, #google-signup-btn");
+  googleBtns.forEach(b => { b.disabled = true; b.textContent = "Opening Google…"; });
+  _googleAuthInProgress = true;
+
   chrome.identity.launchWebAuthFlow(
     { url: authURL, interactive: true },
     async (responseUrl) => {
+      _googleAuthInProgress = false;
+      googleBtns.forEach(b => { b.disabled = false; b.textContent = "Continue with Google"; });
+
       if (chrome.runtime.lastError || !responseUrl) {
         showError(chrome.runtime.lastError?.message || "Google sign-in cancelled");
         return;
