@@ -3,9 +3,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # Project: TruvantaAI – https://github.com/BharatChandra-sys/fake-news-extension
 import os
-import random
+import secrets
 import string
 import logging
+import html as html_lib
+from datetime import datetime, timezone
+
 import requests
 from dotenv import load_dotenv
 
@@ -16,145 +19,216 @@ BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
 BREVO_API_URL = "https://api.brevo.com/v3/smtp/email"
 FROM_EMAIL    = os.getenv("SMTP_USER", "TruvantaAI2@gmail.com")
 FROM_NAME     = "TruvantaAI"
+BRAND_NAME    = "Truvanta"
+SITE_URL      = os.getenv("SITE_URL", "https://truvantaai.tech").rstrip("/")
+SUPPORT_EMAIL = os.getenv("SUPPORT_EMAIL", "contact@gari.live")
+SUPPORT_URL   = os.getenv("SUPPORT_URL", "https://bharatchandra.me/")
+GITHUB_URL    = "https://github.com/BharatChandra-sys/TruvantaAI"
+
+# Mirrors the website theme tokens (factcheckai-website/app/globals.css).
+C_CANVAS = "#0a0a0b"
+C_RAISED = "#111113"
+C_PANEL  = "#17171a"
+C_LINE   = "#232327"
+C_FG     = "#ededef"
+C_FG2    = "#a1a1aa"
+C_FG3    = "#6b6b73"
+C_ACCENT = "#ffc53d"
+
+FONT_STACK = "Geist,-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif"
+MONO_STACK = "'Geist Mono','SF Mono',SFMono-Regular,Menlo,Consolas,'Courier New',monospace"
 
 logger = logging.getLogger(__name__)
 
 
 def generate_otp(length: int = 6) -> str:
-    return "".join(random.choices(string.digits, k=length))
+    return "".join(secrets.choice(string.digits) for _ in range(length))
+
+
+def _footer_col(title: str, links: list) -> str:
+    items = "".join(
+        f'<tr><td style="padding:0 0 10px;font-size:13px;line-height:1.4;">'
+        f'<a href="{href}" style="color:{C_FG3};text-decoration:none;">{label}</a></td></tr>'
+        for label, href in links
+    )
+    return (
+        f'<td valign="top" width="33%" style="padding:0 8px 0 0;">'
+        f'<table role="presentation" cellpadding="0" cellspacing="0" border="0">'
+        f'<tr><td style="padding:0 0 12px;font-size:13px;line-height:1.4;font-weight:500;color:{C_FG};">{title}</td></tr>'
+        f'{items}</table></td>'
+    )
+
+
+def _wordmark(height: int = 22) -> str:
+    # Flat logo mark rendered from the site's <Mark /> SVG (public/email/mark.png, 40:31).
+    width = round(height * 40 / 31)
+    return (
+        f'<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>'
+        f'<td style="vertical-align:middle;padding-right:10px;">'
+        f'<img src="{SITE_URL}/email/mark.png" width="{width}" height="{height}" alt="" style="display:block;border:0;">'
+        f'</td>'
+        f'<td style="vertical-align:middle;font-size:16px;font-weight:600;color:{C_FG};letter-spacing:-0.02em;">{BRAND_NAME}</td>'
+        f'</tr></table>'
+    )
+
+
+def _otp_html(otp: str, details_rows: str, year: int) -> str:
+    # Table layout + inline styles so it renders the same in Gmail, Outlook and Apple Mail.
+    # Structure mirrors the website: wordmark header, centred hero, raised footer with link columns.
+    footer_cols = (
+        _footer_col("Product", [("How it works", f"{SITE_URL}/#how-it-works"), ("Install", f"{SITE_URL}/install"), ("GitHub", GITHUB_URL)])
+        + _footer_col("Help", [("Support", SUPPORT_URL), ("FAQ", f"{SITE_URL}/#faq")])
+        + _footer_col("Legal", [("Privacy", f"{SITE_URL}/privacy"), ("Terms", f"{SITE_URL}/terms")])
+    )
+    return f"""<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="supported-color-schemes" content="dark">
+  <title>Your {BRAND_NAME} verification code</title>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400&display=swap" rel="stylesheet">
+  <!--[if mso]><style>body,table,td,p,a{{font-family:Arial,Helvetica,sans-serif !important;}}</style><![endif]-->
+</head>
+<body style="margin:0;padding:0;background:{C_CANVAS};-webkit-text-size-adjust:100%;-webkit-font-smoothing:antialiased;">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:{C_CANVAS};font-size:1px;line-height:1px;">
+    Your {BRAND_NAME} code is {otp}. It expires in 10 minutes.&#8204;&nbsp;&#8204;&nbsp;&#8204;&nbsp;&#8204;&nbsp;&#8204;&nbsp;&#8204;&nbsp;
+  </div>
+
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="{C_CANVAS}" style="background:{C_CANVAS};font-family:{FONT_STACK};">
+
+    <!-- Header -->
+    <tr><td align="center" style="padding:0 20px;">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:560px;">
+        <tr><td style="padding:24px 0;border-bottom:1px solid {C_LINE};">{_wordmark()}</td></tr>
+      </table>
+    </td></tr>
+
+    <!-- Hero -->
+    <tr><td align="center" style="padding:0 20px;">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:560px;">
+        <tr>
+          <td align="center" style="padding:72px 0 0;font-size:36px;line-height:1.08;font-weight:600;color:{C_FG};letter-spacing:-0.035em;">
+            Reset your password
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding:16px 12px 0;font-size:17px;line-height:1.5;color:{C_FG2};letter-spacing:-0.006em;">
+            Enter this code in {BRAND_NAME} to set a new password.
+          </td>
+        </tr>
+
+        <tr>
+          <td align="center" style="padding:44px 0 0;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td align="center" bgcolor="{C_RAISED}" style="background:{C_RAISED};border-radius:16px;padding:28px 40px 28px 52px;font-family:{FONT_STACK};font-size:40px;line-height:1;font-weight:700;letter-spacing:12px;font-variant-numeric:tabular-nums;color:{C_FG};">
+                  {otp}
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding:20px 0 0;font-size:13px;line-height:1.4;color:{C_FG3};">
+            <span style="color:{C_ACCENT};">&#9679;</span>&nbsp; Expires in 10 minutes &middot; Single use
+          </td>
+        </tr>
+{details_rows}
+        <tr>
+          <td align="center" style="padding:56px 12px 72px;font-size:13px;line-height:1.6;color:{C_FG3};">
+            Didn't request this? You can safely ignore this email &mdash; your password won't change.<br>
+            {BRAND_NAME} will never ask you to share this code.
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+
+    <!-- Footer -->
+    <tr><td align="center" bgcolor="{C_RAISED}" style="background:{C_RAISED};border-top:1px solid {C_LINE};padding:0 20px;">
+      <table role="presentation" width="560" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:560px;">
+        <tr>
+          <td style="padding:44px 0 0;">{_wordmark()}</td>
+        </tr>
+        <tr>
+          <td style="padding:12px 0 36px;font-size:13px;line-height:1.4;color:{C_FG3};">Fact-checking that shows its sources.</td>
+        </tr>
+        <tr>
+          <td style="padding:0 0 26px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>{footer_cols}</tr></table>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:22px 0 32px;border-top:1px solid {C_LINE};font-size:13px;line-height:1.5;color:{C_FG3};">
+            &copy; {year} {BRAND_NAME} &middot; You're receiving this because a password reset was requested for this address.
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+
+  </table>
+</body>
+</html>"""
+
+
+def _otp_text(otp: str, details_text: str, year: int) -> str:
+    return f"""Your {BRAND_NAME} verification code
+
+Enter this code in {BRAND_NAME} to set a new password.
+
+    {otp}
+
+Expires in 10 minutes. Single use.
+{details_text}
+Didn't request this? You can safely ignore this email - your password won't change.
+{BRAND_NAME} will never ask you to share this code.
+
+--
+Support: {SUPPORT_URL}
+Terms:   {SITE_URL}/terms
+Privacy: {SITE_URL}/privacy
+
+(c) {year} {BRAND_NAME}
+"""
 
 
 def send_otp_email(to_email: str, otp: str, ip_address: str = None, location: str = None) -> bool:
     if not BREVO_API_KEY:
         raise RuntimeError("BREVO_API_KEY is not configured.")
 
-    # Format location info
-    location_text = ""
-    if ip_address or location:
-        parts = []
-        if ip_address:
-            parts.append(ip_address)
-        if location:
-            parts.append(location)
-        location_text = ", ".join(parts)
-
-    # Premium email design matching website aesthetic
-    html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Your verification code</title>
-</head>
-<body style="margin:0;padding:0;background:#0a0a0b;font-family:-apple-system,'SF Pro Text','SF Pro Display',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;">
-
-  <!-- Gmail annotation -->
-  <div itemscope itemtype="http://schema.org/EmailMessage">
-    <div itemprop="potentialAction" itemscope itemtype="http://schema.org/ViewAction">
-      <link itemprop="target" href="https://truvantaai.tech"/>
-      <meta itemprop="name" content="Code requested"/>
-    </div>
-    <meta itemprop="description" content="{otp}"/>
-  </div>
-
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0a0a0b;padding:72px 24px;">
-    <tr><td align="center">
-      <table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
-
-        <!-- Logo with glow -->
-        <tr>
-          <td align="center" style="padding-bottom:64px;">
-            <div style="display:inline-block;position:relative;">
-              <img src="https://truvantaai.tech/truvanta-loader.svg" alt="Truvanta" width="120" height="90" style="display:block;position:relative;z-index:1;" />
-            </div>
+    # Only show request details we actually have — "Unknown" rows look broken.
+    details = [(label, value) for label, value in (("Location", location), ("IP", ip_address)) if value]
+    details_rows = ""
+    details_text = ""
+    if details:
+        cells = "".join(
+            f'<tr><td style="padding:2px 16px 2px 0;font-size:12px;color:{C_FG3};">{label}</td>'
+            f'<td style="padding:2px 0;font-family:{MONO_STACK};font-size:12px;color:{C_FG2};">{html_lib.escape(value)}</td></tr>'
+            for label, value in details
+        )
+        details_rows = f"""        <tr>
+          <td align="center" style="padding:16px 0 0;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">{cells}</table>
           </td>
         </tr>
+"""
+        details_text = "\n" + "".join(f"{label}: {value}\n" for label, value in details)
 
-        <!-- Code card with gradient border -->
-        <tr>
-          <td style="padding:0 20px 64px;">
-            <div style="background:linear-gradient(180deg, #1f1f23 0%, #17171a 100%);border-radius:20px;padding:56px 48px;border:1px solid rgba(255,197,61,0.12);box-shadow:0 20px 40px -12px rgba(0,0,0,0.3),0 0 0 1px rgba(255,255,255,0.02) inset;">
-              <div style="margin-bottom:32px;">
-                <p style="margin:0;font-size:12px;font-weight:600;color:#ffc53d;letter-spacing:1.2px;text-transform:uppercase;text-align:center;">
-                  Verification Code
-                </p>
-              </div>
-              <div style="text-align:center;font-size:60px;font-weight:700;color:#ededef;letter-spacing:20px;font-family:'SF Mono',Monaco,Consolas,monospace;line-height:1;margin-bottom:40px;text-shadow:0 2px 12px rgba(255,197,61,0.15);">
-                {otp}
-              </div>
-              <div style="padding-top:32px;border-top:1px solid rgba(255,255,255,0.06);">
-                <p style="margin:0;font-size:15px;color:#a1a1aa;line-height:1.7;text-align:center;font-weight:400;">
-                  Enter this code to reset your password.
-                </p>
-                <p style="margin:12px 0 0;font-size:14px;color:#6b6b73;text-align:center;">
-                  Expires in <span style="color:#ffc53d;font-weight:500;">10 minutes</span>
-                </p>
-              </div>
-            </div>
-          </td>
-        </tr>
-
-        <!-- Security card -->
-        <tr>
-          <td style="padding:0 20px 64px;">
-            <div style="background:#17171a;border-radius:20px;padding:40px;border:1px solid rgba(255,255,255,0.05);">
-              <table width="100%" cellpadding="0" cellspacing="0">
-                <tr>
-                  <td style="padding-bottom:24px;">
-                    <p style="margin:0;font-size:14px;color:#ededef;line-height:1.7;text-align:center;font-weight:500;">
-                       Security Notice
-                    </p>
-                  </td>
-                </tr>
-                <tr>
-                  <td style="padding-bottom:20px;">
-                    <p style="margin:0;font-size:13px;color:#a1a1aa;line-height:1.8;text-align:center;">
-                      Never share this code with anyone.<br/>We'll never ask for it by phone, text, or email.
-                    </p>
-                  </td>
-                </tr>
-                {f'<tr><td style="padding:24px 0;border-top:1px solid rgba(255,255,255,0.04);border-bottom:1px solid rgba(255,255,255,0.04);"><div style="text-align:center;"><p style="margin:0 0 8px;font-size:11px;color:#6b6b73;text-transform:uppercase;letter-spacing:0.8px;font-weight:600;">Request Origin</p><p style="margin:0;font-size:13px;color:#a1a1aa;font-family:monospace;">{location_text}</p></div></td></tr>' if location_text else ''}
-                <tr>
-                  <td style="padding-top:24px;">
-                    <p style="margin:0;font-size:12px;color:#6b6b73;line-height:1.6;text-align:center;">
-                      Didn't request this code?<br/>
-                      <span style="color:#a1a1aa;">You can safely ignore this email.</span>
-                    </p>
-                  </td>
-                </tr>
-              </table>
-            </div>
-          </td>
-        </tr>
-
-        <!-- Footer -->
-        <tr>
-          <td align="center" style="padding-top:16px;">
-            <p style="margin:0 0 8px;font-size:12px;color:#6b6b73;letter-spacing:0.4px;">
-              <span style="color:#ffc53d;">Truvanta</span> · Fact-checking powered by AI
-            </p>
-            <p style="margin:0;font-size:11px;color:#6b6b73;">
-              © 2026 · <a href="https://truvantaai.tech/privacy" style="color:#6b6b73;text-decoration:none;">Privacy</a>
-            </p>
-          </td>
-        </tr>
-
-      </table>
-    </td></tr>
-  </table>
-
-</body>
-</html>"""
+    year = datetime.now(timezone.utc).year
 
     logger.info("Attempting to send OTP email to %s via Brevo", to_email)
-    
+
     payload = {
         "sender":      {"name": FROM_NAME, "email": FROM_EMAIL},
         "to":          [{"email": to_email}],
-        "subject":     f"Your verification code is {otp}",
-        "htmlContent": html,
+        "replyTo":     {"email": SUPPORT_EMAIL, "name": f"{BRAND_NAME} Support"},
+        "subject":     f"{otp} is your {BRAND_NAME} verification code",
+        "htmlContent": _otp_html(otp, details_rows, year),
+        "textContent": _otp_text(otp, details_text, year),
+        "tags":        ["password-reset"],
     }
-    
+
     try:
         resp = requests.post(
             BREVO_API_URL,
@@ -165,22 +239,21 @@ def send_otp_email(to_email: str, otp: str, ip_address: str = None, location: st
             json=payload,
             timeout=15,
         )
-        
+
         logger.info("Brevo API response: status=%d", resp.status_code)
-        
+
         if resp.status_code not in (200, 201):
             logger.error("Brevo API error %d: %s", resp.status_code, resp.text)
             raise RuntimeError(f"Brevo API error {resp.status_code}: {resp.text}")
-        
+
         try:
-            response_data = resp.json()
-            message_id = response_data.get("messageId", "unknown")
+            message_id = resp.json().get("messageId", "unknown")
             logger.info("OTP email sent successfully to %s (messageId: %s)", to_email, message_id)
-        except:
+        except ValueError:
             logger.info("OTP email sent successfully to %s", to_email)
-        
+
         return True
-        
+
     except requests.exceptions.RequestException as e:
         logger.error("Network error sending OTP to %s: %s", to_email, str(e))
         raise RuntimeError(f"Failed to send email: {str(e)}")
