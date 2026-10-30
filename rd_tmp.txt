@@ -1,0 +1,140 @@
+﻿
+---
+
+## Product Evolution Plan: TruvantaAI 3.0
+
+### Vision
+
+Transform TruvantaAI from a pure fact-checking tool into a comprehensive research verification and literature intelligence platform. The evolution maintains fact-checking as the core product (70%) while adding academic research capabilities (30%) as an extension, operating primarily on deterministic algorithms with minimal external AI dependency.
+
+### Core Philosophy
+
+**Fact-Check First, Research Second**
+- Maintain robust claim verification as the foundation
+- Add academic paper analysis and comparison capabilities
+- Operate 90-95% without external AI APIs through local-first architecture
+- Provide clear provenance for every conclusion
+
+**Intelligence Hierarchy**
+```
+Deterministic algorithms
+    â†“
+Existing retrieval systems (BM25, vector search, RRF)
+    â†“
+Local/open-source ML/NLP models
+    â†“
+Local LLM (optional)
+    â†“
+External AI API (fallback only)
+```
+
+### Target Architecture
+
+```
+                         TRUVANTAAI 3.0
+                              |
+            +-----------------+-----------------+
+            |                                   |
+      VERIFY ENGINE (70%)              RESEARCH ENGINE (30%)
+         CORE PRODUCT                    EXTENSION LAYER
+            |                                   |
+    Claim verification               Paper detection & identity
+    Evidence retrieval               Metadata enrichment
+    Verdict calculation              Academic comparison
+    Source validation                Literature patterns
+    Fact-check memory                Citation intelligence
+            |                                   |
+            +-----------------+-----------------+
+                              |
+                   SHARED INTELLIGENCE
+                              |
+        +---------------------+---------------------+
+        |                     |                     |
+   Retrieval Engine      NLP/ML Layer        Evidence Layer
+        |                     |                     |
+  BM25 + embeddings     Local classifiers      Provenance tracking
+  RRF + reranker        Local NLP              Citation validation
+  Filtering             Entity extraction      Source passages
+  Caching               Similarity models      Confidence scoring
+        |                     |                     |
+        +---------------------+---------------------+
+                              |
+                      OPTIONAL AI GATEWAY
+                              |
+                Local LLM preferred / External API fallback
+```
+
+### Development Phases
+
+#### Phase 0: Foundation Stabilization (Weeks 1-2)
+
+**Objective:** Clean, document, and stabilize the current system before adding features.
+
+**Tasks:**
+1. Codebase cleanup
+   - Remove all "FactCheckAI" branding, update to "TruvantaAI"
+   - Clean old/stale API URLs and dead code
+   - Remove duplicate implementations
+   - Update all documentation
+
+2. Extension refactoring
+   - Split into logical modules: content/, background/, sidepanel/, popup/, shared/
+   - Separate concerns: selection.js, toolbar.js, page-detector.js, highlighter.js
+   - Implement proper message passing architecture
+   - Create reusable API client and storage utilities
+
+3. Backend documentation
+   - Document complete fact-check pipeline (claim â†’ verdict)
+   - Map all data flows and dependencies
+   - Document existing models and database tables
+   - Create architecture diagrams
+
+4. Performance baseline
+   - Benchmark current latency across all endpoints
+   - Measure cache hit rates
+   - Profile database query performance
+   - Establish success metrics
+
+**Deliverables:**
+- Clean, well-organized codebase with clear module boundaries
+- Comprehensive technical documentation
+- Performance baseline metrics for future comparison
+- Stable foundation ready for new features
+
+#### Phase 1: Shared Intelligence Layer (Weeks 3-4)
+
+**Objective:** Build common infrastructure that both Verify and Research engines will use.
+
+**Implementation Details:**
+
+1. **Local Embeddings Service**
+   - Replace external embedding APIs with sentence-transformers
+   - Model: all-MiniLM-L6-v2 (22M parameters, 384 dimensions)
+   - Content-based caching using SHA256 hashes
+   - 7-day TTL for embedding cache
+   - No external API calls for embeddings
+
+2. **Local Reranking**
+   - Implement cross-encoder reranking with ms-marco-MiniLM-L-6-v2
+   - Replace LLM-based relevance scoring
+   - Batch processing for efficiency
+   - Fallback to BM25 scoring if model unavailable
+
+3. **Unified Evidence Model**
+   - Single Evidence class for both fact-check and research
+   - Source type enum: WEB, NEWS, GOVERNMENT, ACADEMIC, JOURNAL, CONFERENCE, PREPRINT
+   - Provenance tracking: SOURCE, COMPUTED, EXTRACTED, LOCAL_MODEL, LLM
+   - Standardized metadata structure
+
+4. **Enhanced Retrieval Pipeline**
+   - Unified retrieval for both engines
+   - Source-type filtering at query time
+   - Improved RRF (Reciprocal Rank Fusion) implementation
+   - Query-time boosting for academic sources when appropriate
+
+5. **Smart Request Router**
+   - Determines processing mode: verify_only, verify_plus_academic, research_deep
+   - Routes based on page context (is academic paper?)
+   - Optimizes resource usage by selecting minimal necessary pipeline
+
+**Deliverables:**

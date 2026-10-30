@@ -29,6 +29,8 @@ from urllib.parse import urlparse
 
 import requests
 
+from app.analysis.evidence_guard import screen
+
 logger = logging.getLogger(__name__)
 
 DEADLINE_S = 3.5            # whole search + scrape budget
@@ -381,7 +383,8 @@ def _fact_checks(claim: str) -> List[dict]:
     for a in _fetch_factcheck_evidence(query):
         text = f'{a.get("source", "")} rated this claim "{a.get("rating", "")}". {a.get("title", "")}'
         out.append(_item(a["url"], a.get("title"), text, a.get("source"), "fact_check",
-                         rating=a.get("rating", ""), published=a.get("review_date", "")))
+                         rating=a.get("rating", ""), published=a.get("review_date", ""),
+                         claim_reviewed=a.get("claim_reviewed", "")))
     return out
 
 
@@ -591,7 +594,8 @@ def iter_search(claim: str, deadline_s: float = DEADLINE_S):
                              state, timings, "rescue:"):
                 yield "found", new
 
-    ranked = _rank(state["found"], rel)
+    # Web text reaches the verdict model here, so anything written to steer it is dropped first.
+    ranked = _rank(screen(state["found"]), rel)
     logger.info("search: %d passages in %.2fs (%s)", len(ranked), time.monotonic() - t0, timings)
     yield "done", ranked
 
@@ -705,6 +709,54 @@ def reconcile(verdict: str, confidence: float, articles: List[dict]):
     if not refute and (fc_supports or len(support) >= 2):
         return "real", 0.8
     return verdict, confidence
+
+
+def factcheck_verdict(claim: str, passages: List[dict]) -> Optional[dict]:
+    """
+    A verdict straight from published fact-checks, with no language model, when a
+    fact-checker examined this same claim. Same shape as run_grounded_analysis().
+
+    A rating applies to the claim the fact-checker examined, which is often the
+    opposite wording ("MMR causes autism": False). So it counts only when that
+    claim says the same thing as this one: near-identical meaning (embedding
+    similarity at the "same claim" threshold), the same negations and numbers,
+    a clear True/False rating, and no matching fact-check rated the other way.
+    """
+    from app.analysis.evidence import _rating_stance
+    from app.retrieval.embeddings import embed_batch, thresholds
+    from app.retrieval.memory import same_meaning
+
+    checks = [(i, p) for i, p in enumerate(passages, 1)
+              if p.get("kind") == "fact_check" and p.get("claim_reviewed")
+              and _rating_stance(p.get("rating", "")) in ("support", "contradict")]
+    if not checks:
+        return None
+    vectors = embed_batch([claim] + [p["claim_reviewed"] for _, p in checks])
+    if vectors[0] is None:
+        return None
+    match_at = thresholds()["match"]
+    same = []
+    for (i, p), vec in zip(checks, vectors[1:]):
+        if vec is None or not same_meaning(claim, p["claim_reviewed"]):
+            continue
+        if sum(a * b for a, b in zip(vectors[0], vec)) >= match_at:
+            same.append((i, p))
+    stances = {_rating_stance(p.get("rating", "")) for _, p in same}
+    if len(stances) != 1:
+        return None                      # no same-claim fact-check, or they disagree
+    supported = stances.pop() == "support"
+    names = list(dict.fromkeys(p.get("source") or "A fact-checker" for _, p in same))
+    who = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+    cites = "".join(f"[{i}]" for i, _ in same)
+    ratings = list(dict.fromkeys(f'"{p.get("rating")}"' for _, p in same))
+    return {
+        "verdict": "real" if supported else "fake",
+        "confidence": 0.9,
+        "explanation": f"{who} checked this claim and rated it {' / '.join(ratings)} {cites}.",
+        "stances": {i: ("support" if supported else "refute") for i, _ in same},
+        "ai_score": 0.15 if supported else 0.85,
+        "model": "published fact-check",
+    }
 
 
 def verdict_without_model(passages: List[dict], articles: List[dict]):

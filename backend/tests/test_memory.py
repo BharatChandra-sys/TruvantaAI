@@ -107,3 +107,8 @@ def test_a_disagreeing_check_disputes_the_stored_verdict():
 
 def test_a_person_review_is_kept():
     assert confirm("fake", "human_reviewed", 1, "real", "verified") == ("human_reviewed", 1)
+
+
+def test_numbers_inside_names_are_not_quantities():
+    assert same_meaning("5G networks spread COVID-19.", "5G spreads the coronavirus")
+    assert not same_meaning("India won the 1983 World Cup", "India won the 2011 World Cup")

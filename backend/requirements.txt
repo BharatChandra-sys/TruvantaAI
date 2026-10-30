@@ -25,7 +25,8 @@ numpy==1.26.4                  # Pinned for scikit-learn compatibility
 scikit-learn==1.6.1            # Models trained with 1.6.1 — do NOT upgrade
 joblib==1.4.2
 rank-bm25==0.2.2               # BM25 lexical retrieval for hybrid search
-fastembed==0.9.1              # ONNX sentence embeddings for claim memory (no torch)
+# fastembed==0.9.1             # optional: EMBEDDINGS_BACKEND=local (~180 MB RAM); default is Gemini embeddings.
+#                              # Also turns on the local cross-encoder reranker (+~100 MB; RERANKER_BACKEND=off to skip)
 
 # ── NLP utilities ─────────────────────────────────────────────
 langdetect==1.0.9

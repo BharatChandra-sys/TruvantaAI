@@ -1,0 +1,201 @@
+﻿    from ddgs import DDGS
+    results = DDGS(timeout=3).text(claim[:200], max_results=6)
+    return [_item(r.get("href", ""), r.get("title"), r.get("body"), None, "web") for r in results or []]
+
+
+def _ddg_news(claim: str) -> List[dict]:
+    from ddgs import DDGS
+    results = DDGS(timeout=3).news(keyword_query(claim), max_results=5)
+    return [_item(r.get("url", ""), r.get("title"), r.get("body"), r.get("source"), "news",
+                  published=r.get("date", "")) for r in results or []]
+
+
+def _gdelt(claim: str) -> List[dict]:
+    r = _session.get("https://api.gdeltproject.org/api/v2/doc/doc", params={
+        "query": keyword_query(claim, 6), "mode": "artlist", "format": "json",
+        "maxrecords": 5, "timespan": "3months", "sort": "hybridrel",
+    }, timeout=DEADLINE_S - 0.3)
+    if r.status_code != 200 or not r.text.startswith("{"):
+        return []
+    return [_item(a.get("url", ""), a.get("title"), "", a.get("domain"), "news", published=a.get("seendate", ""))
+            for a in r.json().get("articles", [])]
+
+
+def _tavily(claim: str) -> List[dict]:
+    key = os.getenv("TAVILY_API_KEY")
+    r = _session.post("https://api.tavily.com/search", json={
+        "api_key": key, "query": claim[:300], "max_results": 5, "search_depth": "basic",
+    }, timeout=3)
+    if r.status_code in (401, 403):
+        _disable("tavily", 3600, f"HTTP {r.status_code} (key rejected)")
+        return []
+    if r.status_code == 429 or r.status_code == 432:
+        _disable("tavily", 900, "quota or rate limit")
+        return []
+    r.raise_for_status()
+    return [_item(x.get("url", ""), x.get("title"), x.get("content"), None, "web")
+            for x in r.json().get("results", [])]
+
+
+def _fact_checks(claim: str) -> List[dict]:
+    from app.analysis.evidence import _fetch_factcheck_evidence
+    out = []
+    for a in _fetch_factcheck_evidence(claim):
+        text = f'{a.get("source", "")} rated this claim "{a.get("rating", "")}". {a.get("title", "")}'
+        out.append(_item(a["url"], a.get("title"), text, a.get("source"), "fact_check",
+                         rating=a.get("rating", ""), published=a.get("review_date", "")))
+    return out
+
+
+# Sources that often answer late: used if they arrive in time, never waited for.
+_BONUS = {"gdelt"}
+
+SOURCES: Dict[str, Callable[[str], List[dict]]] = {
+    "fact_check": _fact_checks,
+    "wikipedia": _wikipedia,
+    "ddg_text": _ddg_text,
+    "ddg_news": _ddg_news,
+    "gdelt": _gdelt,
+}
+if os.getenv("TAVILY_API_KEY"):
+    SOURCES["tavily"] = _tavily
+
+
+# â”€â”€ Scraping â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+def _scrape(url: str, claim_words: set) -> Optional[str]:
+    """Fetch a page (size- and time-capped) and return its most relevant paragraphs."""
+    from lxml import html as lxml_html
+
+    start = time.monotonic()
+    with requests.get(url, headers={"User-Agent": BROWSER_UA, "Accept": "text/html"},
+                      timeout=SCRAPE_TIMEOUT_S, stream=True, allow_redirects=True) as r:
+        if r.status_code != 200 or "html" not in r.headers.get("Content-Type", ""):
+            return None
+        chunks, size = [], 0
+        for chunk in r.iter_content(32_768):
+            chunks.append(chunk)
+            size += len(chunk)
+            if size >= SCRAPE_MAX_BYTES or time.monotonic() - start > SCRAPE_TIMEOUT_S:
+                break
+    doc = lxml_html.fromstring(b"".join(chunks))
+    for bad in doc.xpath("//script|//style|//nav|//footer|//header|//aside|//form"):
+        bad.drop_tree()
+    paras = [re.sub(r"\s+", " ", p.text_content()).strip() for p in doc.xpath("//p|//li")]
+    paras = [p for p in paras if len(p) > 60]
+    if not paras:
+        return None
+    best = sorted(paras, key=lambda p: overlap(claim_words, p), reverse=True)[:2]
+    if overlap(claim_words, " ".join(best)) < 0.25:
+        return None
+    return " ".join(best)[:PASSAGE_CHARS * 2]
+
+
+# â”€â”€ Orchestration â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+def _relevant(claim_words: set, it: dict) -> float:
+    return overlap(claim_words, f'{it["title"]} {it["text"]}')
+
+
+def _rank(found: List[dict], claim_words: set) -> List[dict]:
+    """Fact-checks first, then relevance; drop items that don't mention the claim."""
+    def score(it):
+        return (it["kind"] == "fact_check", _relevant(claim_words, it) + (0.1 if it.get("scraped") else 0))
+    ranked = [dict(it, text=it["text"][:PASSAGE_CHARS]) for it in sorted(found, key=score, reverse=True)
+              if it["kind"] == "fact_check" or _relevant(claim_words, it) >= 0.2]
+    return ranked[:MAX_PASSAGES]
+
+
+def iter_search(claim: str, deadline_s: float = DEADLINE_S):
+    """
+    Search every free source in parallel and report progress as it happens.
+
+    Yields ("found", items) each time a source returns new relevant results
+    (fact-checks arrive this way in well under a second), and finally
+    ("done", passages) with the ranked passages for the verdict model.
+    """
+    t0 = time.monotonic()
+    end = t0 + deadline_s
+    claim_words = set(words(claim))
+
+    pending: Dict[Future, str] = {
+        _POOL.submit(fn, claim): name for name, fn in SOURCES.items() if _source_on(name)
+    }
+    found: List[dict] = []
+    seen_urls = set()
+    scraped = 0
+    timings = {}
+
+    while pending:
+        remaining = end - time.monotonic()
+        if remaining <= 0 or all(name in _BONUS for name in pending.values()):
+            break
+        if (time.monotonic() - t0 >= ENOUGH_AFTER_S and
+                sum(1 for it in found if _relevant(claim_words, it) >= 0.3) >= ENOUGH_PASSAGES):
+            break
+        # Wake up at ENOUGH_AFTER_S even if nothing new arrived, to re-check "enough".
+        until_enough = ENOUGH_AFTER_S - (time.monotonic() - t0)
+        timeout = min(remaining, until_enough) if until_enough > 0 else remaining
+        done, _ = wait(list(pending), timeout=timeout, return_when=FIRST_COMPLETED)
+        for fut in done:
+            name = pending.pop(fut)
+            timings[name] = round(time.monotonic() - t0, 2)
+            try:
+                result = fut.result()
+            except Exception as e:
+                timings[name] = f"err {type(e).__name__}"
+                continue
+            if name.startswith("scrape:"):
+                url = name[7:]
+                if result:
+                    for it in found:
+                        if it["url"] == url:
+                            it["text"] = result
+                            it["scraped"] = True
+                continue
+            new = []
+            for it in result or []:
+                url = it.get("url") or ""
+                if not url or url in seen_urls:
+                    continue
+                seen_urls.add(url)
+                found.append(it)
+                if it["kind"] == "fact_check" or _relevant(claim_words, it) >= 0.2:
+                    new.append(it)
+                # Scrape promising web/news pages while other sources are still searching.
+                if (scraped < SCRAPE_PAGES and it["kind"] in ("web", "news")
+                        and not any(s in url for s in _SKIP_SCRAPE)
+                        and _relevant(claim_words, it) >= 0.3
+                        and end - time.monotonic() > 0.8):
+                    scraped += 1
+                    pending[_POOL.submit(_scrape, url, claim_words)] = f"scrape:{url}"
+            if new:
+                yield "found", new
+
+    for fut in pending:            # past the deadline: stop waiting, never block the request
+        fut.cancel()
+
+    ranked = _rank(found, claim_words)
+    logger.info("search: %d passages in %.2fs (%s)", len(ranked), time.monotonic() - t0, timings)
+    yield "done", ranked
+
+
+def search_evidence(claim: str, deadline_s: float = DEADLINE_S) -> List[dict]:
+    """
+    Gather passages for a claim from every free source within `deadline_s`.
+    Returns up to MAX_PASSAGES items, published fact-checks first, then by
+    relevance. Each item: url, title, text, source, kind (+ rating/published).
+    """
+    passages: List[dict] = []
+    for kind, payload in iter_search(claim, deadline_s):
+        if kind == "done":
+            passages = payload
+    return passages
+
+
+# â”€â”€ From passages + model judgement to the app's evidence format â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+_CITE = re.compile(r"\[(\d+)\]")
+
+
+def to_evidence(passages: List[dict], grounded: Optional[dict]):
+    """
+    Turn passages (and the grounded model's per-source stances) into
+    (evidence_score, urls, articles, explanation). Cited sources come first

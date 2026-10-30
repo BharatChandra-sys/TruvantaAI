@@ -32,19 +32,31 @@ _sentence_transformer = None
 _hdbscan = None
 
 
+class _SharedEmbedder:
+    """
+    The app's one embedding model (retrieval/embeddings.py, all-MiniLM-L6-v2 on
+    ONNX Runtime) behind the encode() call this module uses. Loading a second
+    copy through sentence-transformers cost ~590 MB, and on Render, where
+    PyTorch isn't installed, it never loaded, so clustering never ran there.
+    """
+
+    def encode(self, text, convert_to_numpy=True):
+        from app.retrieval.embeddings import embed
+        vec = embed(text)
+        if vec is None:
+            raise RuntimeError("embedding model unavailable")
+        return np.asarray(vec, dtype=np.float32)
+
+
 def _get_sentence_transformer():
-    """Lazy load sentence-transformers model"""
+    """The shared embedder, or None when no embedding model can be loaded."""
     global _sentence_transformer
     if _sentence_transformer is None:
-        try:
-            from sentence_transformers import SentenceTransformer
-            # Use lightweight model for speed (384-dim embeddings)
-            # For production, consider: all-MiniLM-L6-v2 (faster) or all-mpnet-base-v2 (better)
-            _sentence_transformer = SentenceTransformer('all-MiniLM-L6-v2')
-            logger.info("Loaded sentence-transformers model: all-MiniLM-L6-v2")
-        except ImportError:
-            logger.warning("sentence-transformers not installed. Run: pip install sentence-transformers")
-            _sentence_transformer = None
+        # Only the local model: the 0.85 cluster threshold was tuned for MiniLM, and
+        # clustering every claim shouldn't spend remote embedding calls.
+        from app.retrieval.embeddings import backend
+        if backend() == "local":
+            _sentence_transformer = _SharedEmbedder()
     return _sentence_transformer
 
 

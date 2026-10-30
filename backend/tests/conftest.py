@@ -12,6 +12,8 @@ if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test.db")
+# Tests never touch network services: no shared Redis (the in-process cache is used).
+os.environ["REDIS_ENABLED"] = "false"
 
 import app.models
 from database import Base, get_db

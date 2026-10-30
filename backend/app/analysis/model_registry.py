@@ -126,6 +126,21 @@ def judge_models(models: Iterable[str]) -> List[str]:
     return [m for m in models if not small(m)]
 
 
+def fast_models(models: Iterable[str]) -> List[str]:
+    """
+    Models for the early answer, cheapest first: small or "instant"/"lite" builds,
+    then the rest. Free-tier rate limits are per model, so early answers drawn from
+    these never use up the quota of the large models that judge the evidence.
+    """
+    def key(m: str):
+        n = m.lower()
+        sizes = [float(x) for x in re.findall(r"(\d+(?:\.\d+)?)b\b", n)]
+        quick = "instant" in n or "lite" in n
+        small = bool(sizes) and max(sizes) < JUDGE_MIN_PARAMS_B
+        return (not (quick or small), not quick, -capability_rank(m))
+    return sorted(dict.fromkeys(models), key=key)
+
+
 class ModelRegistry:
     def __init__(self):
         self._lock = threading.Lock()

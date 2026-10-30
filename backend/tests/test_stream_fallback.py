@@ -83,3 +83,21 @@ def test_sources_no_model_could_read_fall_back_to_the_early_answer(monkeypatch):
     v, calls = _verdict(monkeypatch, [PASSAGE], None, KNOWS)
     assert v["verdict"] == "real" and v["basis"] == "knowledge" and v["sources_unread"] is True
     assert v["confidence"] <= 0.7
+
+
+def test_early_answer_can_be_switched_off(monkeypatch):
+    import app.analysis.ai as ai
+    import app.analysis.search as search
+    from app.routes import stream_routes
+
+    monkeypatch.setattr(stream_routes, "EARLY_ANSWER", False)
+    monkeypatch.setattr(search, "iter_search", lambda text: iter([("done", [PASSAGE])]))
+    monkeypatch.setattr(ai, "run_grounded_analysis", lambda c, p: {
+        "verdict": "fake", "confidence": 0.93, "explanation": "Refuted [1].",
+        "stances": {1: "refute"}, "ai_score": 0.9, "model": "test"})
+    calls = []
+    monkeypatch.setattr(ai, "run_knowledge_analysis", lambda c: calls.append(c) or KNOWS)
+    monkeypatch.setattr(stream_routes, "_persist", lambda *a: None)
+
+    events = [e.split("\n", 1)[0] for e in stream_routes._run(f"claim {uuid.uuid4()}", None)]
+    assert "event: early" not in events and not calls      # no extra model call at all

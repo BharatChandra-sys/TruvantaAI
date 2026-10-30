@@ -119,6 +119,11 @@ async def lifespan(app: FastAPI):
         warm_up()
     except Exception as e:
         logger.warning("Memory warm-up skipped: %s", e)
+    try:
+        from app.retrieval.reranker import warm_up as warm_reranker
+        warm_reranker()
+    except Exception as e:
+        logger.warning("Reranker warm-up skipped: %s", e)
 
     # The language detector loads its profiles on first use (~300 ms); pay that now.
     def _warm_language():

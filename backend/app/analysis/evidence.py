@@ -165,6 +165,8 @@ def _fetch_factcheck_evidence(text: str) -> list:
                     "trust_label": get_trust_label(url),
                     "bias_label":  get_bias_label(url),
                     "kind":        "fact_check",
+                    # The claim the fact-checker examined: the rating applies to this wording.
+                    "claim_reviewed": claim.get("text", ""),
                 })
         return articles[:4]
     except Exception as e:

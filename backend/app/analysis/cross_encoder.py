@@ -5,11 +5,13 @@
 """
 Level 70 — Cross-Encoder Evidence Reranking
 
-Reranks NewsAPI articles by semantic relevance to the claim using
-a lightweight cross-encoder approach via LLM scoring.
+Reranks NewsAPI and Tavily articles by relevance to the claim.
 
-This replaces the simple keyword stance classifier with actual
-semantic understanding of claim-article relevance.
+Relevance comes from the local cross-encoder in app/retrieval/reranker.py:
+one call scores every article in milliseconds and gives the same scores on
+every run. The LLM then reads only the articles that are kept, for their
+stance, which replaces the simple keyword stance classifier. Without a local
+model, the LLM scores relevance and stance for every article, as before.
 """
 import logging
 from typing import Optional
@@ -87,22 +89,28 @@ def _score_article(claim: str, article: dict) -> Optional[dict]:
     return None
 
 
-def rerank_articles(claim: str, articles: list, top_k: int = 5) -> list:
-    """
-    Rerank articles by semantic relevance to the claim.
+def _article_text(article: dict) -> str:
+    """What the cross-encoder reads: the headline and whatever summary the source gave."""
+    summary = article.get("description") or article.get("snippet") or article.get("content") or ""
+    return f"{article.get('title', '')}. {summary}".strip(" .")
 
-    For each article, uses LLM to score relevance (0-1) and stance.
-    Returns top_k most relevant articles with updated stance scores.
 
-    Falls back to original order if LLM unavailable.
-    """
-    if not articles or len(articles) <= 1:
-        return articles
+def _llm_stances(claim: str, articles: list) -> None:
+    """Set each article's stance from the LLM, in place; articles it can't read keep theirs."""
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = {executor.submit(_score_article, claim, a): a for a in articles}
+        for future in as_completed(futures):
+            try:
+                result = future.result()
+            except Exception:
+                continue
+            if result:
+                futures[future]["stance"]        = result["stance"]  # override keyword stance
+                futures[future]["stance_reason"] = result["reason"]
 
-    # Only rerank if we have more articles than top_k (otherwise no point)
-    if len(articles) <= top_k:
-        return articles
 
+def _rerank_with_llm(claim: str, articles: list, top_k: int) -> list:
+    """Relevance and stance for every article from the LLM: the path without a local model."""
     scored = []
     # Run scoring in parallel — max 3 concurrent LLM calls
     with ThreadPoolExecutor(max_workers=3) as executor:
@@ -115,15 +123,43 @@ def rerank_articles(claim: str, articles: list, top_k: int = 5) -> list:
                     articles[idx]["relevance_score"] = score["relevance"]
                     articles[idx]["stance"]          = score["stance"]  # override keyword stance
                     articles[idx]["stance_reason"]   = score["reason"]
-                    scored.append((score["relevance"], articles[idx]))
+                    scored.append((score["relevance"], idx, articles[idx]))
                 else:
-                    scored.append((0.5, articles[idx]))
+                    scored.append((0.5, idx, articles[idx]))
             except Exception:
-                scored.append((0.5, articles[idx]))
+                scored.append((0.5, idx, articles[idx]))
 
-    # Sort by relevance descending
-    scored.sort(key=lambda x: x[0], reverse=True)
-    reranked = [a for _, a in scored[:top_k]]
+    # Sort by relevance descending; ties keep the original order.
+    scored.sort(key=lambda x: (-x[0], x[1]))
+    return [a for _, _, a in scored[:top_k]]
+
+
+def rerank_articles(claim: str, articles: list, top_k: int = 5) -> list:
+    """
+    Rerank articles by relevance to the claim and return the top_k, each with
+    relevance_score (0-1) and an LLM stance where a provider answered.
+
+    The local cross-encoder scores relevance when available, so only the top_k
+    articles cost an LLM call; otherwise the LLM scores every article.
+    Falls back to the original order if neither is available.
+    """
+    if not articles or len(articles) <= 1:
+        return articles
+
+    # Only rerank if we have more articles than top_k (otherwise no point)
+    if len(articles) <= top_k:
+        return articles
+
+    from app.retrieval.reranker import score
+    scores = score(claim, [_article_text(a) for a in articles])
+    if scores is None:
+        reranked = _rerank_with_llm(claim, articles, top_k)
+    else:
+        for a, s in zip(articles, scores):
+            a["relevance_score"] = s
+        # Stable sort: ties keep the search engine's order.
+        reranked = sorted(articles, key=lambda a: a["relevance_score"], reverse=True)[:top_k]
+        _llm_stances(claim, reranked)
 
     logger.debug("Cross-encoder reranked %d → %d articles", len(articles), len(reranked))
     return reranked

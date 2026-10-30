@@ -88,3 +88,41 @@ def test_firm_verdict_backed_by_its_sources_is_kept():
     arts = [{"kind": "fact_check", "stance": "contradict", "model_stance": "contradict"},
             {"kind": "news", "stance": "contradict", "model_stance": "contradict"}]
     assert reconcile("fake", 0.93, arts) == ("fake", 0.93)
+
+
+def _fc(claim_reviewed, rating, source="Snopes"):
+    return {"kind": "fact_check", "url": f"https://{source.lower()}.com/x", "title": "t", "source": source,
+            "text": "", "rating": rating, "claim_reviewed": claim_reviewed}
+
+
+def _same_vectors(monkeypatch, similarity):
+    # Every text embeds so that any two have the given cosine similarity.
+    import math
+    import app.retrieval.embeddings as e
+    a, b = [1.0, 0.0], [similarity, math.sqrt(1 - similarity ** 2)]
+    monkeypatch.setattr(e, "embed_batch", lambda texts: [a] + [b] * (len(texts) - 1))
+    monkeypatch.setattr(e, "thresholds", lambda: {"match": 0.97, "related": 0.85})
+
+
+def test_a_fact_check_of_the_same_claim_decides_without_a_model(monkeypatch):
+    from app.analysis.search import factcheck_verdict
+    _same_vectors(monkeypatch, 0.98)
+    got = factcheck_verdict("5G networks spread COVID-19.", [_fc("5G spreads the coronavirus", "False")])
+    assert got["verdict"] == "fake" and got["stances"] == {1: "refute"} and "Snopes" in got["explanation"]
+
+
+def test_a_fact_check_of_the_opposite_wording_never_decides(monkeypatch):
+    # "MMR causes autism": False must not decide "MMR does not cause autism".
+    from app.analysis.search import factcheck_verdict
+    _same_vectors(monkeypatch, 0.98)
+    assert factcheck_verdict("The MMR vaccine does not cause autism.",
+                             [_fc("The MMR vaccine causes autism", "False")]) is None
+
+
+def test_loosely_related_or_disagreeing_fact_checks_leave_it_to_the_model(monkeypatch):
+    from app.analysis.search import factcheck_verdict
+    _same_vectors(monkeypatch, 0.93)                       # same topic, not the same claim
+    assert factcheck_verdict("Pluto is a planet.", [_fc("Pluto was reclassified", "True")]) is None
+    _same_vectors(monkeypatch, 0.98)
+    assert factcheck_verdict("X is true.", [_fc("X is true", "True"), _fc("X is true", "False", "AFP")]) is None
+    assert factcheck_verdict("X is true.", [_fc("X is true", "Mixture")]) is None

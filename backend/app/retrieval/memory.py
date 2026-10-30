@@ -36,8 +36,23 @@ from app.retrieval.embeddings import embed, embed_batch, to_pgvector
 logger = logging.getLogger(__name__)
 
 MEMORY_ENABLED = os.getenv("MEMORY_ENABLED", "true").lower() != "false"
-MATCH_SIMILARITY = float(os.getenv("MEMORY_MATCH_SIMILARITY", "0.92"))
-RELATED_SIMILARITY = float(os.getenv("MEMORY_RELATED_SIMILARITY", "0.75"))
+# Similarity thresholds depend on the embedding model (embeddings.thresholds());
+# these override them when set.
+_MATCH_OVERRIDE = os.getenv("MEMORY_MATCH_SIMILARITY")
+_RELATED_OVERRIDE = os.getenv("MEMORY_RELATED_SIMILARITY")
+
+
+def _thresholds():
+    from app.retrieval.embeddings import thresholds
+    t = thresholds()
+    return (float(_MATCH_OVERRIDE) if _MATCH_OVERRIDE else t["match"],
+            float(_RELATED_OVERRIDE) if _RELATED_OVERRIDE else t["related"])
+
+
+def _space() -> str:
+    """Tag for stored rows: vectors only compare with vectors from the same model."""
+    from app.retrieval.embeddings import model_id
+    return f"stream|{model_id()}"
 MAX_RELATED_PASSAGES = 3
 # Independent checks that must agree before a stored verdict answers instantly.
 CONFIRMATIONS_FOR_INSTANT = int(os.getenv("MEMORY_CONFIRMATIONS", "2"))
@@ -49,7 +64,9 @@ MAX_AGE_DAYS = int(os.getenv("MEMORY_MAX_AGE_DAYS", "30"))
 _CANDIDATES = 5
 
 _WORD = re.compile(r"[a-z0-9']+")
-_NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
+# Standalone quantities only (2016, 3.5, 1,000): digits joined to letters or hyphens
+# are parts of names ("5G", "COVID-19", "R-37M"), not numbers a claim turns on.
+_NUMBER = re.compile(r"(?<![\w-])\d+(?:[.,]\d+)*(?![\w-])")
 _NEGATIONS = {"not", "no", "never", "none", "nobody", "nothing", "neither", "nor",
               "cannot", "without", "isn't", "aren't", "wasn't", "weren't", "doesn't",
               "don't", "didn't", "won't", "can't", "hasn't", "haven't", "hadn't"}
@@ -104,17 +121,19 @@ _NEAREST_SQL = """
     SET ivfflat.probes = 100;
     SET hnsw.ef_search = 100;
     SELECT claim_text, verdict, confidence, verification_status, rag_assessment, updated_at,
-           1 - (embedding <=> CAST(%(vec)s AS vector)) AS similarity
+           1 - (embedding <=> CAST(%(vec)s AS halfvec)) AS similarity
     FROM fact_checks
     WHERE embedding IS NOT NULL
+      AND model_version = %(space)s
       AND rag_assessment IS NOT NULL
       AND updated_at >= %(since)s
-    ORDER BY embedding <=> CAST(%(vec)s AS vector)
+    ORDER BY embedding <=> CAST(%(vec)s AS halfvec)
     LIMIT %(k)s
 """
 # ivfflat.probes = 100 makes the IVFFlat index exact: built on a near-empty
 # table, it otherwise probes 1 list of 100 and misses most rows. Exact search
 # is cheap at this size; the HNSW migration removes the need for it.
+# The query vector is cast to the column's type, halfvec, which the HNSW index is built on.
 
 
 def _engine():
@@ -153,6 +172,7 @@ def _nearest(vec: list) -> Optional[list]:
     if eng is None:
         return None
     params = {"vec": to_pgvector(vec), "since": datetime.utcnow() - timedelta(days=MAX_AGE_DAYS),
+              "space": _space(),
               "k": _CANDIDATES}
     for attempt in (1, 2):   # a pooled connection may have been closed while Neon slept
         try:
@@ -179,9 +199,10 @@ def lookup(claim: str) -> dict:
     if rows is None:
         return empty
 
+    match_at, related_at = _thresholds()
     instant, passages, seen = None, [], set()
     for r in rows:
-        if r.similarity < RELATED_SIMILARITY:
+        if r.similarity < related_at:
             break
         try:
             stored = json.loads(r.rag_assessment)
@@ -191,7 +212,7 @@ def lookup(claim: str) -> dict:
         trusted = (r.verification_status == "human_reviewed"
                    or (r.verification_status == "verified"
                        and stored.get("confirmations", 1) >= CONFIRMATIONS_FOR_INSTANT))
-        if (instant is None and trusted and r.similarity >= MATCH_SIMILARITY
+        if (instant is None and trusted and r.similarity >= match_at
                 and r.verdict in ("real", "fake") and stored.get("basis") == "sources" and arts
                 and same_wording(claim, r.claim_text)):
             logger.info("memory hit %.3f: %r -> %r", r.similarity, claim[:60], r.claim_text[:60])
@@ -217,7 +238,9 @@ def lookup(claim: str) -> dict:
                              "source": a.get("source", ""), "text": a.get("snippet", ""),
                              "rating": a.get("rating", ""), "published": a.get("published", ""),
                              "low_trust": False, "from_memory": True})
-    return {"instant": instant, "passages": passages}
+    # Stored sources are web text too, and rows written before the guard existed were never screened.
+    from app.analysis.evidence_guard import screen
+    return {"instant": instant, "passages": screen(passages)}
 
 
 def _status(result: dict) -> str:
@@ -260,8 +283,10 @@ def remember(claim: str, result: dict) -> None:
     if not MEMORY_ENABLED or result.get("memory") or result.get("verdict") not in ("real", "fake", "uncertain"):
         return
     arts = [a for a in (result.get("evidence_articles") or []) if a.get("url")][:8]
-    vectors = embed_batch([claim] + [f"{a.get('title', '')} {a.get('snippet', '')}" for a in arts])
-    if vectors[0] is None:
+    # Only the claim is searched, so only it gets a vector: already computed (and
+    # cached) by the lookup, so storing costs no embedding call.
+    claim_vec = embed(claim)
+    if claim_vec is None:
         return
     db = _session()
     if db is None:
@@ -297,14 +322,14 @@ def remember(claim: str, result: dict) -> None:
         stored["confirmed_at"] = now.isoformat() if counted else last
 
         fc.normalized_claim = " ".join(_WORD.findall(claim.lower()))[:2000]
-        fc.embedding = vector_value(vectors[0])
+        fc.embedding = vector_value(claim_vec)
         fc.verdict = result["verdict"]
         fc.confidence = float(result.get("confidence") or 0.5)
         fc.verification_status = status
         fc.llm_verdict = result["verdict"] if result.get("basis") == "knowledge" else None
         fc.evidence_score = result.get("evidence_score")
         fc.rag_assessment = json.dumps(stored, ensure_ascii=False)
-        fc.model_version = "stream"
+        fc.model_version = _space()
         fc.updated_at = now
         db.flush()
 
@@ -312,7 +337,7 @@ def remember(claim: str, result: dict) -> None:
         existing = {d.url: d for d in db.query(EvidenceDocument).filter(EvidenceDocument.url.in_(urls))} if urls else {}
         links = {l.evidence_document_id: l for l in
                  db.query(FactCheckEvidence).filter(FactCheckEvidence.fact_check_id == fc.id)}
-        for a, vec in zip(arts, vectors[1:]):
+        for a in arts:
             url = a["url"][:2048]
             doc = existing.get(url)
             if doc is None:
@@ -326,8 +351,6 @@ def remember(claim: str, result: dict) -> None:
             doc.trust_score = a.get("trust_score", doc.trust_score or 0.5)
             doc.source_tier = 2 if a.get("kind") in ("fact_check", "research") else 5 if a.get("low_trust") else 3
             doc.retrieved_at = now
-            if vec is not None:
-                doc.embedding = vector_value(vec)
             db.flush()
             link = links.get(doc.id)
             if link is None:

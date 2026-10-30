@@ -128,3 +128,9 @@ def test_non_chat_models_are_not_discovered():
     from app.analysis.ai_config import _chat_models
     got = _chat_models(["gemini-3.6-flash", "lyria-3.5", "veo-3", "gemini-3.1-flash-image", "text-embedding-005"])
     assert got == ["gemini-3.6-flash"]
+
+
+def test_early_answers_use_small_fast_models_first():
+    from app.analysis.model_registry import fast_models
+    got = fast_models(["openai/gpt-oss-120b", "llama-3.1-8b-instant", "qwen/qwen3.8-27b", "allam-2-7b"])
+    assert got[0] == "llama-3.1-8b-instant" and got[-1] in ("openai/gpt-oss-120b", "qwen/qwen3.8-27b")

@@ -22,6 +22,7 @@ Only the work the verdict needs is on this path; persistence happens after.
 import hashlib
 import json
 import logging
+import os
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
@@ -37,12 +38,20 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 STREAM_CACHE_TTL = 60 * 60
+# A verdict decided from sources holds for a day (settled facts don't change by
+# the hour); repeats then cost no search and no model call. Uncertain answers
+# expire sooner, since new sources may settle them.
+DECIDED_CACHE_TTL = 24 * 60 * 60
+KNOWLEDGE_CACHE_TTL = 24 * 60 * 60
 # Memory lookups run beside the live search, so a miss costs nothing.
 _MEMORY_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="memory")
 # The early answer and the sourced verdict are model calls; they run here so the
 # stream can keep sending events while they work.
 _MODEL_POOL = ThreadPoolExecutor(max_workers=16, thread_name_prefix="stream-model")
 _MODEL_TIMEOUT_S = 15
+# EARLY_ANSWER=false turns off the early answer: checks then behave as before, and
+# the knowledge answer is only asked for when sources can't decide.
+EARLY_ANSWER = os.getenv("EARLY_ANSWER", "true").lower() != "false"
 
 # How long the search waits for the lookup before starting (an instant answer
 # skips it entirely), and how long to still wait once the search has ended.
@@ -100,6 +109,19 @@ def _persist(claim: str, result: dict, user_id):
         logger.warning("stream: memory write failed: %s", e)
 
 
+def _knowledge(text: str):
+    """The model's knowledge answer for a claim, cached so a re-check never asks again."""
+    from app.analysis.ai import run_knowledge_analysis
+    key = "knowledge:" + hashlib.sha256(" ".join(text.lower().split()).encode()).hexdigest()
+    hit = cache.get(key)
+    if hit:
+        return hit
+    answer = run_knowledge_analysis(text)
+    if answer:
+        cache.set(key, answer, KNOWLEDGE_CACHE_TTL)
+    return answer
+
+
 def _remembered(future, wait_s: float = 0.0) -> dict:
     """The memory lookup's result if it has finished (optionally waiting a little)."""
     empty = {"instant": None, "passages": []}
@@ -114,7 +136,8 @@ def _remembered(future, wait_s: float = 0.0) -> dict:
 def _run(claim: str, user_id, fresh: bool = False):
     from app.analysis.ai import run_grounded_analysis, run_knowledge_analysis
     from app.analysis.evidence import _rating_stance
-    from app.analysis.search import iter_search, reconcile, to_evidence, verdict_without_model
+    from app.analysis.search import (factcheck_verdict, iter_search, reconcile, to_evidence,
+                                     verdict_without_model)
 
     t0 = time.monotonic()
     cache_key = "stream:" + hashlib.sha256(" ".join(claim.lower().split()).encode()).hexdigest()
@@ -160,11 +183,11 @@ def _run(claim: str, user_id, fresh: bool = False):
         # Early answer: the model's established knowledge, in parallel with the
         # search. The sourced verdict replaces it; when nothing found addresses
         # the claim, it becomes the final answer, so it is never wasted.
-        knowing = _MODEL_POOL.submit(run_knowledge_analysis, text)
+        knowing = _MODEL_POOL.submit(_knowledge, text) if EARLY_ANSWER else None
         early_sent = []
 
         def early_event():
-            if early_sent or not knowing.done():
+            if knowing is None or early_sent or not knowing.done():
                 return None
             try:
                 k = knowing.result()
@@ -209,7 +232,9 @@ def _run(claim: str, user_id, fresh: bool = False):
             yield _sse("sources", {"items": [_public(p) for p in extra]})
 
         yield _sse("judging", {"count": len(passages)})
-        judging = _MODEL_POOL.submit(run_grounded_analysis, text, passages)
+        # A fact-checker examined this same claim: their rating decides, no model call.
+        decided = factcheck_verdict(text, passages)
+        judging = _MODEL_POOL.submit(lambda: decided or run_grounded_analysis(text, passages))
         deadline = time.monotonic() + _MODEL_TIMEOUT_S
         grounded = None
         while True:
@@ -247,7 +272,8 @@ def _run(claim: str, user_id, fresh: bool = False):
         addressed = any(a.get("model_stance") in ("support", "contradict") for a in articles)
         if verdict == "uncertain" and (not addressed or not grounded):
             try:
-                knowledge = knowing.result(timeout=max(0.1, deadline - time.monotonic()))
+                knowledge = (knowing.result(timeout=max(0.1, deadline - time.monotonic()))
+                             if knowing is not None else _knowledge(text))
             except Exception:
                 knowledge = None
             if knowledge and knowledge["verdict"] != "uncertain":
@@ -271,7 +297,8 @@ def _run(claim: str, user_id, fresh: bool = False):
             "sources_unread": basis == "knowledge" and not grounded and bool(passages),
         }
         if (grounded or articles or basis == "knowledge") and not fresh:
-            cache.set(cache_key, result, STREAM_CACHE_TTL)
+            settled = basis == "sources" and verdict in ("real", "fake")
+            cache.set(cache_key, result, DECIDED_CACHE_TTL if settled else STREAM_CACHE_TTL)
         yield _sse("verdict", result)
         yield _sse("done", {"ms": round((time.monotonic() - t0) * 1000)})
         if not fresh:

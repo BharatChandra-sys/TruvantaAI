@@ -10,38 +10,119 @@ Why cross-encoder over bi-encoder?
 - Cross-encoder: encodes query+document together → slow but precise
   → ideal for reranking a small candidate pool (15-30 docs)
 
-Model: cross-encoder/ms-marco-MiniLM-L-6-v2
-  - 22M params, ~80ms per pair on CPU
-  - Trained on MS MARCO passage ranking
-  - Works well for sentence-level relevance
+Model: ms-marco-MiniLM-L-6-v2 (22M parameters, trained on MS MARCO passage
+ranking), from the first backend that loads, chosen with RERANKER_BACKEND:
 
-Falls back to the LLM-based scorer in cross_encoder.py when
-sentence-transformers is not installed.
+  auto                   (default) fastembed, then sentence-transformers.
+  fastembed              ONNX Runtime, no PyTorch: ~35 ms for 10 articles on
+                         CPU, ~100 MB of memory beside local embeddings (~180 MB
+                         alone). Set RERANKER_BACKEND=off on a 512 MB host.
+  sentence-transformers  the same model on PyTorch.
+  off                    no model; score() returns None.
+
+score() is the shared entry point; it returns 0-1 relevance scores, or None
+when no model is available, and callers then keep their own order. rerank()
+falls back to the LLM-based scorer in cross_encoder.py.
 """
 from __future__ import annotations
 
 import logging
-from typing import Optional
+import os
+import threading
+from typing import Callable, Optional
+
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
-_RERANKER_MODEL_NAME = "cross-encoder/ms-marco-MiniLM-L-6-v2"
-_reranker            = None
+_MODEL = "ms-marco-MiniLM-L-6-v2"
+# The model reads at most 512 tokens per pair; longer text only costs tokenizing.
+_MAX_CHARS = 1500
+
+_lock = threading.Lock()
+_backend: Optional[str] = None      # "fastembed" | "sentence-transformers" | "off", decided once
+_predict: Optional[Callable[[str, list], np.ndarray]] = None
 
 
-def _load_reranker():
-    global _reranker
-    if _reranker is not None:
-        return _reranker
+def _sigmoid(x: np.ndarray) -> np.ndarray:
+    return 1.0 / (1.0 + np.exp(-x))
+
+
+def _load_fastembed():
+    from fastembed.rerank.cross_encoder import TextCrossEncoder
+    model = TextCrossEncoder(f"Xenova/{_MODEL}")
+    # fastembed returns raw logits.
+    return lambda query, texts: _sigmoid(np.fromiter(model.rerank(query, texts), dtype=np.float32,
+                                                     count=len(texts)))
+
+
+def _load_sentence_transformers():
+    from sentence_transformers import CrossEncoder
+    model = CrossEncoder(f"cross-encoder/{_MODEL}")
+
+    def predict(query, texts):
+        out = np.asarray(model.predict([(query, t) for t in texts], show_progress_bar=False),
+                         dtype=np.float32)
+        # Recent versions apply a sigmoid to single-label models already; older ones return logits.
+        return out if out.min() >= 0.0 and out.max() <= 1.0 else _sigmoid(out)
+    return predict
+
+
+_LOADERS = {"fastembed": _load_fastembed, "sentence-transformers": _load_sentence_transformers}
+
+
+def _choose() -> str:
+    global _backend, _predict
+    if _backend is not None:
+        return _backend
+    with _lock:
+        if _backend is not None:
+            return _backend
+        wanted = os.getenv("RERANKER_BACKEND", "auto").strip().lower()
+        names = list(_LOADERS) if wanted == "auto" else [wanted] if wanted in _LOADERS else []
+        _backend = "off"
+        for name in names:
+            try:
+                _predict = _LOADERS[name]()
+                _backend = name
+                break
+            except ImportError:
+                logger.debug("Reranker: %s not installed", name)
+            except Exception as e:
+                logger.warning("Reranker: %s failed to load: %s", name, e)
+        logger.info("Reranker: %s", f"{_backend} ({_MODEL})" if _backend != "off" else "off")
+        return _backend
+
+
+def available() -> bool:
+    """True when a cross-encoder model is loaded."""
+    return _choose() != "off"
+
+
+def backend() -> str:
+    return _choose()
+
+
+def warm_up() -> None:
+    """Load the model before the first check needs it."""
+    threading.Thread(target=_choose, daemon=True, name="reranker-warmup").start()
+
+
+def score(query: str, texts: list[str]) -> Optional[list[float]]:
+    """
+    Relevance of each text to the query, 0-1 (higher is more relevant), in the
+    order given. None when no model is available or scoring fails.
+    """
+    if not texts:
+        return []
+    if not available():
+        return None
     try:
-        from sentence_transformers import CrossEncoder
-        _reranker = CrossEncoder(_RERANKER_MODEL_NAME)
-        logger.info("Cross-encoder reranker loaded: %s", _RERANKER_MODEL_NAME)
-    except ImportError:
-        logger.warning("sentence-transformers not installed — using LLM fallback reranker")
+        scores = _predict((query or "")[:_MAX_CHARS], [(t or "")[:_MAX_CHARS] for t in texts])
     except Exception as e:
-        logger.warning("Failed to load cross-encoder: %s", e)
-    return _reranker
+        logger.warning("Reranker scoring failed (%s): %s", _backend, str(e)[:160])
+        return None
+    return [round(float(s), 4) for s in scores]
 
 
 def rerank(
@@ -69,21 +150,14 @@ def rerank(
     if len(candidates) <= top_k:
         return candidates  # No need to rerank small pools
 
-    texts = [c.get(text_key, "") or c.get("title", "") for c in candidates]
-
-    model = _load_reranker()
-    if model is not None:
-        try:
-            pairs  = [(claim, t) for t in texts]
-            scores = model.predict(pairs, show_progress_bar=False)
-            for c, s in zip(candidates, scores):
-                c["rerank_score"] = float(s)
-            ranked = sorted(candidates, key=lambda x: x.get("rerank_score", 0), reverse=True)
-            logger.debug("Cross-encoder reranked %d → %d candidates",
-                         len(candidates), top_k)
-            return ranked[:top_k]
-        except Exception as e:
-            logger.warning("Cross-encoder reranking failed, using RRF order: %s", e)
+    scores = score(claim, [c.get(text_key, "") or c.get("title", "") for c in candidates])
+    if scores is not None:
+        for c, s in zip(candidates, scores):
+            c["rerank_score"] = s
+        # Stable sort: ties keep the retrieval order.
+        ranked = sorted(candidates, key=lambda x: x["rerank_score"], reverse=True)
+        logger.debug("Cross-encoder reranked %d → %d candidates", len(candidates), top_k)
+        return ranked[:top_k]
 
     # Fallback: use LLM-based scorer from legacy cross_encoder.py
     try:
