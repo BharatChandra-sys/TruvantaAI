@@ -8,8 +8,8 @@ import MotionProvider from '@/components/landing/MotionProvider';
 import { EASE_OUT, EASE_OUT_EXPO, Mark, Reveal, TextLink } from '@/components/landing/primitives';
 import { GITHUB_URL } from '@/components/landing/data';
 
-const ZIP_URL = '/truvanta-v2.6.3.zip';
-const VERSION = '2.6.3';
+const ZIP_URL = '/truvanta-v2.6.4.zip';
+const VERSION = '2.6.4';
 
 const STEPS: { title: string; text: React.ReactNode; visual: React.ReactNode }[] = [
   {
@@ -142,7 +142,7 @@ function UnzipVisual() {
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-3 rounded-[10px] bg-canvas/60 px-3 py-2.5">
           <span className="grid size-7 place-items-center rounded-[7px] bg-panel-2 font-mono text-[9px] text-fg-2">ZIP</span>
-          <span className="truncate font-mono text-[12px] text-fg-2">truvanta-v2.6.3.zip</span>
+          <span className="truncate font-mono text-[12px] text-fg-2">truvanta-v2.6.4.zip</span>
         </div>
         <div className="flex justify-center text-fg-3" aria-hidden>
           <svg viewBox="0 0 16 16" fill="none" className="size-4">

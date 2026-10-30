@@ -1,15 +1,16 @@
 {
-  "version": "2.6.3",
-  "downloadUrl": "/truvanta-v2.6.3.zip",
-  "releaseDate": "2026-10-25",
+  "version": "2.6.4",
+  "downloadUrl": "/truvanta-v2.6.4.zip",
+  "releaseDate": "2026-10-31",
   "changelog": [
+    "Google Sign-in now works for all users with a stable extension ID",
+    "Fixed OAuth flow — no more 'invalid request' or 'custom URI scheme' errors",
+    "Extension ID locked permanently via manifest key (same ID for every install)",
+    "Removed conflicting pre-warm auth call that caused 'only one web auth flow' error",
+    "Service worker keep-alive alarm now re-registers on every restart",
     "Sign-in required for checks, with automatic resume after signing in",
     "Redesigned popup and in-page card with a calmer, neutral look",
-    "Past chats reopen with their messages and fact-check cards",
-    "Smarter search queries and more free sources (Google News, Bing News, PubMed)",
-    "Low-reliability sources are labelled and weighted down",
-    "No sources found now gives 'Uncertain' instead of a guess",
-    "Themed scrollbars; toolbar no longer overlaps an open card"
+    "Past chats reopen with their messages and fact-check cards"
   ],
   "minimumBrowserVersion": {
     "chrome": "88",
