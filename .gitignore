@@ -258,3 +258,7 @@ yarn.lock
 
 # Evaluation: per-claim runs stay local, the summary is published
 backend/eval/results/*.jsonl
+
+# Extension private key — never commit this
+extension_private_key.pem
+gen_ext_key.py

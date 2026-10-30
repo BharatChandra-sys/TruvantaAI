@@ -127,7 +127,7 @@ async function doGoogle() {
 
   const CLIENT_ID   = "595122585703-6v7d8602emobounkv3k93fbagih73k7s.apps.googleusercontent.com";
   const REDIRECT_URI = chrome.identity.getRedirectURL("oauth2");
-  console.log("[Truvanta] OAuth redirect URI:", REDIRECT_URI); // e.g. https://<ext-id>.chromiumapp.org/oauth2
+  console.log("[Truvanta] OAuth redirect URI:", REDIRECT_URI); // https://jdjkdkbkfekfmehm.chromiumapp.org/oauth2
 
   const authURL =
     "https://accounts.google.com/o/oauth2/v2/auth" +
