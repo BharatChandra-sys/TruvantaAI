@@ -1,7 +1,7 @@
 // Copyright 2027 Bodapati Bharat Chandra. All rights reserved.
 // Licensed under the Apache License, Version 2.0
 // SPDX-License-Identifier: Apache-2.0
-// Project: TruvantaAI � https://github.com/BharatChandra-sys/fake-news-extension
+// Project: TruvantaAI � https://github.com/BharatChandra-sys/fake-news-extension
 // API is defined in config.js (loaded before this script)
 
 // ── Tab switching ─────────────────────────────────────────────
@@ -109,51 +109,48 @@ document.getElementById("google-signup-btn").addEventListener("click", doGoogle)
 
 async function doGoogle() {
   hideError();
-  // Edge doesn't support getAuthToken — always use launchWebAuthFlow
-  // which works on both Chrome and Edge
-  const isEdge = navigator.userAgent.includes("Edg/");
 
-  if (!isEdge && chrome.identity.getAuthToken) {
-    chrome.identity.getAuthToken({ interactive: true }, async (accessToken) => {
-      if (!chrome.runtime.lastError && accessToken) {
-        await exchangeAccessToken(accessToken);
-      } else {
-        await googleWebAuthFlow();
-      }
-    });
-  } else {
-    await googleWebAuthFlow();
-  }
-}
+  // We use launchWebAuthFlow with a redirect to our own website
+  // (https://truvantaai.tech/auth/callback). This approach works for every
+  // user regardless of their extension ID — no Chrome Web Store publishing
+  // required. The Web client in Google Cloud Console just needs
+  // https://truvantaai.tech/auth/callback as an authorized redirect URI.
+  //
+  // IMPORTANT: launchWebAuthFlow needs the Web OAuth client ID (not the
+  // Chrome extension client). The Chrome extension client only works with
+  // getAuthToken which requires a matching extension ID in Google Cloud Console.
 
-async function googleWebAuthFlow() {
-  // Get Google Client ID from manifest.json instead of hardcoding
-  const manifestData = chrome.runtime.getManifest();
-  const CLIENT_ID = manifestData.oauth2?.client_id;
-  
-  if (!CLIENT_ID) {
-    showError("Google Client ID not configured in extension");
-    return;
-  }
-  
-  const REDIRECT  = chrome.identity.getRedirectURL("oauth2");
-  const authURL   = "https://accounts.google.com/o/oauth2/auth" +
+  // Web client ID from Google Cloud Console (Web client 1)
+  const CLIENT_ID = "595122585703-6v7d8602emobounkv3k93fbagih73k7s.apps.googleusercontent.com";
+
+  const REDIRECT_URI = "https://truvantaai.tech/auth/callback";
+
+  const authURL =
+    "https://accounts.google.com/o/oauth2/v2/auth" +
     `?client_id=${encodeURIComponent(CLIENT_ID)}` +
     `&response_type=token` +
-    `&redirect_uri=${encodeURIComponent(REDIRECT)}` +
-    `&scope=${encodeURIComponent("openid email profile")}`;
+    `&redirect_uri=${encodeURIComponent(REDIRECT_URI)}` +
+    `&scope=${encodeURIComponent("openid email profile")}` +
+    `&prompt=select_account`;
 
-  chrome.identity.launchWebAuthFlow({ url: authURL, interactive: true }, async (responseUrl) => {
-    if (chrome.runtime.lastError || !responseUrl) {
-      showError(chrome.runtime.lastError?.message || "Google sign-in cancelled");
-      return;
+  chrome.identity.launchWebAuthFlow(
+    { url: authURL, interactive: true },
+    async (responseUrl) => {
+      if (chrome.runtime.lastError || !responseUrl) {
+        showError(chrome.runtime.lastError?.message || "Google sign-in cancelled");
+        return;
+      }
+      // Token is in the URL fragment: .../callback#access_token=...
+      const fragment = new URL(responseUrl).hash.slice(1);
+      const params   = new URLSearchParams(fragment);
+      const accessToken = params.get("access_token");
+      if (!accessToken) {
+        showError("Google sign-in failed — no token returned. Please try again.");
+        return;
+      }
+      await exchangeAccessToken(accessToken);
     }
-    // Extract access_token from the redirect URL fragment
-    const params = new URLSearchParams(new URL(responseUrl).hash.slice(1));
-    const accessToken = params.get("access_token");
-    if (!accessToken) { showError("Google sign-in failed: no token returned"); return; }
-    await exchangeAccessToken(accessToken);
-  });
+  );
 }
 
 async function exchangeAccessToken(accessToken) {
