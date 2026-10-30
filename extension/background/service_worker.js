@@ -53,6 +53,15 @@ chrome.runtime.onInstalled.addListener(({ reason }) => {
   }
 });
 
+// Re-register alarm on service worker restart (MV3 workers can be killed
+// and restarted; onInstalled does NOT fire on restart — only on install/update.
+// Without this, the keepAlive alarm is lost after the first restart.)
+chrome.alarms.get("keepAlive", (alarm) => {
+  if (!alarm) {
+    chrome.alarms.create("keepAlive", { periodInMinutes: 4 });
+  }
+});
+
 // ── Alarm handler ─────────────────────────────────────────────────────────────
 chrome.alarms.onAlarm.addListener(({ name }) => {
   if (name === "keepAlive") pingBackend();

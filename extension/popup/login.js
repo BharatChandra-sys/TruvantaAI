@@ -118,20 +118,16 @@ async function doGoogle() {
     return;
   }
 
-  // We use launchWebAuthFlow with a redirect to our own website
-  // (https://truvantaai.tech/auth/callback). This approach works for every
-  // user regardless of their extension ID — no Chrome Web Store publishing
-  // required. The Web client in Google Cloud Console just needs
-  // https://truvantaai.tech/auth/callback as an authorized redirect URI.
-  //
-  // IMPORTANT: launchWebAuthFlow needs the Web OAuth client ID (not the
-  // Chrome extension client). The Chrome extension client only works with
-  // getAuthToken which requires a matching extension ID in Google Cloud Console.
+  // Use chrome.identity.getRedirectURL() — this generates a special
+  // https://<ext-id>.chromiumapp.org/ URL that Chrome GUARANTEES to intercept.
+  // Using a real website URL (truvantaai.tech/auth/callback) causes Chrome to
+  // open it as a real tab instead of intercepting it, breaking the flow.
+  // The Web client in Google Cloud Console needs this chromiumapp.org URL added
+  // as an authorized redirect URI.
 
-  // Web client ID from Google Cloud Console (Web client 1)
-  const CLIENT_ID = "595122585703-6v7d8602emobounkv3k93fbagih73k7s.apps.googleusercontent.com";
-
-  const REDIRECT_URI = "https://truvantaai.tech/auth/callback";
+  const CLIENT_ID   = "595122585703-6v7d8602emobounkv3k93fbagih73k7s.apps.googleusercontent.com";
+  const REDIRECT_URI = chrome.identity.getRedirectURL("oauth2");
+  console.log("[Truvanta] OAuth redirect URI:", REDIRECT_URI); // e.g. https://<ext-id>.chromiumapp.org/oauth2
 
   const authURL =
     "https://accounts.google.com/o/oauth2/v2/auth" +
@@ -156,9 +152,9 @@ async function doGoogle() {
         showError(chrome.runtime.lastError?.message || "Google sign-in cancelled");
         return;
       }
-      // Token is in the URL fragment: .../callback#access_token=...
-      const fragment = new URL(responseUrl).hash.slice(1);
-      const params   = new URLSearchParams(fragment);
+      // Token is in the URL fragment: ...chromiumapp.org/oauth2#access_token=...
+      const fragment   = new URL(responseUrl).hash.slice(1);
+      const params     = new URLSearchParams(fragment);
       const accessToken = params.get("access_token");
       if (!accessToken) {
         showError("Google sign-in failed — no token returned. Please try again.");
@@ -205,13 +201,7 @@ chrome.storage.local.get(["token"], d => {
   if (d.token) window.location.href = chrome.runtime.getURL("popup/popup.html");
 });
 
-// Pre-warm Google token silently so clicking the button is instant
-if (chrome.identity && chrome.identity.getAuthToken) {
-  chrome.identity.getAuthToken({ interactive: false }, () => {
-    // silent — just warms the cache, ignore result and errors
-    void chrome.runtime.lastError;
-  });
-}
+// (Pre-warm removed — conflicts with launchWebAuthFlow approach)
 
 // Enter key
 document.addEventListener("keydown", e => {
