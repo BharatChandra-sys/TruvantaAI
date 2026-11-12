@@ -1,15 +1,30 @@
 name: CI
 
+# Runs on every push to main and every pull request.
+# Deploys are gated on this: Render deploys the backend only after these checks
+# pass (autoDeployTrigger: checksPass in render.yaml); Vercel builds the website.
+
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main]
   pull_request:
-    branches: [ main ]
+
+# A newer push to the same branch cancels the run it replaces.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   backend:
     name: Backend tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: backend
     steps:
       - uses: actions/checkout@v4
 
@@ -17,14 +32,12 @@ jobs:
         with:
           python-version: '3.11.9'
           cache: pip
-          cache-dependency-path: backend/requirements.txt
+          cache-dependency-path: backend/requirements*.txt
 
       - name: Install dependencies
-        working-directory: backend
-        run: pip install -r requirements.txt
+        run: pip install -r requirements-dev.txt
 
       - name: Run tests
-        working-directory: backend
         env:
           DATABASE_URL: sqlite:///./test.db
           JWT_SECRET: ci-only-secret
@@ -36,6 +49,7 @@ jobs:
   extension:
     name: Extension checks
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
 
@@ -47,20 +61,41 @@ jobs:
         run: find extension -name '*.js' -not -path '*/node_modules/*' -print0 | xargs -0 -n1 node --check
 
       - name: Validate manifest
-        run: |
-          node -e '
-            const m = require("./extension/manifest.json");
-            if (m.manifest_version !== 3) throw new Error("manifest_version must be 3");
-            if (!/^\d+\.\d+\.\d+$/.test(m.version)) throw new Error("bad version " + m.version);
-            console.log("manifest ok, version", m.version);
-          '
+        run: node .github/scripts/check-manifest.js
 
       - name: Production backend is selected
         run: grep -q 'USE_LOCAL_BACKEND = false' extension/env.js
 
+  website:
+    name: Website types and lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: factcheckai-website
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: factcheckai-website/package-lock.json
+
+      - run: npm ci
+      - run: npx tsc --noEmit
+      # The site has existing lint errors (28 on 2026-11-12, mostly
+      # react-hooks/set-state-in-effect). Reported, not blocking, until they are fixed;
+      # then delete the continue-on-error line.
+      - run: npm run lint
+        continue-on-error: true
+
   security:
     name: Security scan (report only)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Reports findings without failing the build; read the uploaded report.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -68,12 +103,15 @@ jobs:
         with:
           python-version: '3.11.9'
 
-      - name: Bandit
+      - name: Bandit (code) and pip-audit (dependencies)
         run: |
-          pip install bandit
+          pip install bandit pip-audit
           bandit -r backend/app -ll -f json -o bandit-report.json || true
+          pip-audit -r backend/requirements.txt -f json -o pip-audit-report.json || true
 
       - uses: actions/upload-artifact@v4
         with:
           name: security-report
-          path: bandit-report.json
+          path: |
+            bandit-report.json
+            pip-audit-report.json

@@ -5,6 +5,7 @@
 import os
 import re
 import requests
+from app.analysis.ai_config import http as _http
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
 
@@ -21,8 +22,33 @@ from app.analysis.ai_config import (
 CHAT_SYSTEM = (
     "You are a helpful, knowledgeable assistant specializing in media literacy and fact-checking. "
     "Answer questions clearly and concisely. Be friendly and factual. Never fabricate sources or statistics. "
-    "When discussing news or claims, always encourage users to verify information from multiple trusted sources."
+    "When discussing news or claims, always encourage users to verify information from multiple trusted sources. "
+    "Earlier messages in this conversation, including fact-check results, are context: use them to "
+    "understand follow-up questions such as 'why?', 'is that still true?' or 'what about the second point?'."
 )
+
+# The context window: how much of the conversation goes to the model. Free-tier
+# models have small per-minute token limits, so the budget is modest
+# (6,000 characters is roughly 1,500 tokens) and the newest messages win.
+HISTORY_MESSAGES = 12
+HISTORY_CHARS = 6000
+MESSAGE_CHARS = 1500    # one long pasted article must not crowd out the rest
+
+
+def conversation_context(history: list) -> list:
+    """The most recent messages that fit the budget, oldest first."""
+    picked, used = [], 0
+    for h in reversed((history or [])[-HISTORY_MESSAGES:]):
+        if not isinstance(h, dict) or h.get("role") not in ("user", "assistant"):
+            continue
+        content = str(h.get("content") or "").strip()[:MESSAGE_CHARS]
+        if not content:
+            continue
+        if used + len(content) > HISTORY_CHARS:
+            break
+        picked.append({"role": h["role"], "content": content})
+        used += len(content)
+    return picked[::-1]
 
 CLAIM_DETECT_PROMPT = (
     "Classify the following input as either 'claim' or 'other'.\n"
@@ -64,19 +90,12 @@ def _quick_response(text: str) -> str:
 def _tfidf_is_claim(text: str) -> bool:
     """Use local TF-IDF model to detect if text is a claim (fast, no API calls)."""
     try:
-        import joblib
-        import os
-        
-        # Load TF-IDF model
-        model_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "model.joblib")
-        vectorizer_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "vectorizer.joblib")
-        
-        if not os.path.exists(model_path) or not os.path.exists(vectorizer_path):
-            return None  # Models not available, fallback to AI
-        
-        model = joblib.load(model_path)
-        vectorizer = joblib.load(vectorizer_path)
-        
+        # The model is already in memory (loaded once at startup).
+        from app.analysis import ml as _ml
+        if not _ml._load_tfidf():
+            return None  # Model not available, fall back to AI
+        model, vectorizer = _ml._model, _ml._vectorizer
+
         # Heuristic rules first (very fast)
         text_lower = text.lower().strip()
         
@@ -119,7 +138,7 @@ def _get_keys():
 
 
 def _call_openai_compat(url: str, key: str, model: str, messages: list, max_tokens=400, temperature=0.7) -> str:
-    r = requests.post(
+    r = _http.post(
         url,
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
         json={"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens},
@@ -176,7 +195,7 @@ def _call_gemini(messages: list, max_tokens=400, temperature=0.7) -> str:
     for model in models[:3]:
         try:
             url = f"{GEMINI_URL_BASE}/{model}:generateContent"
-            r = requests.post(
+            r = _http.post(
                 f"{url}?key={key}",
                 headers={"Content-Type": "application/json"},
                 json={"contents": contents, "generationConfig": {"temperature": temperature, "maxOutputTokens": max_tokens}},
@@ -199,7 +218,7 @@ def _call_minimax_chat(messages: list, max_tokens=400, temperature=0.7) -> str:
     # Try M2.7-highspeed first for chat (lower latency), fall back to M2.7
     for model in ["MiniMax-M2.7-highspeed", "MiniMax-M2.7"]:
         try:
-            r = requests.post(
+            r = _http.post(
                 MINIMAX_URL,
                 headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
                 json={"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens},
@@ -289,8 +308,7 @@ def run_chat(message: str, history: list) -> str:
     
     # Build full conversation for AI
     msgs = [{"role": "system", "content": CHAT_SYSTEM}]
-    for h in history[-6:]:
-        msgs.append({"role": h["role"], "content": h["content"]})
+    msgs.extend(conversation_context(history))
     msgs.append({"role": "user", "content": message})
 
     keys = _get_keys()

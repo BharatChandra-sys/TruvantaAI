@@ -903,6 +903,7 @@
       }
       current.port = port;
       let settled = false;
+      let started = false;  // the backend has answered at all
       const finish = (fn, value) => {
         if (settled) return;
         settled = true;
@@ -910,6 +911,7 @@
         fn(value);
       };
       port.onMessage.addListener(({ event, data, status, reason }) => {
+        if (event !== "network_error") started = true;
         switch (event) {
           case "sources": on.sources?.(data.items || []); break;
           case "factcheck": on.factcheck?.(data); break;
@@ -923,11 +925,15 @@
             else if (status === 429) finish(reject, new Error("Too many requests. Wait a moment and try again."));
             else finish(reject, new Error(`The server returned an error (${status}). Try again in a moment.`));
             break;
-          case "network_error":
-            finish(reject, new Error(reason === "timeout"
+          case "network_error": {
+            const err = new Error(reason === "timeout"
               ? "This is taking longer than usual. Try again in a moment."
-              : "Couldn’t reach Truvanta. Check your connection and try again."));
+              : "Couldn’t reach Truvanta. Check your connection and try again.");
+            // Timed out before the backend said anything: it was asleep and is waking.
+            err.coldStart = reason === "timeout" && !started;
+            finish(reject, err);
             break;
+          }
           case "end": finish(reject, new Error("The check ended without a result. Try again.")); break;
         }
       });
@@ -1055,15 +1061,19 @@
     try {
       let data;
       try {
-        [data] = await Promise.all([
-          streamCheck(current, current.text, {
-            sources: items => card === current && liveSources(items),
-            factcheck: fc => card === current && liveFactcheck(fc),
-            early: e => card === current && liveEarly(e),
-            judging: n => card === current && setScanLabel(n ? `Reading ${n} source${n === 1 ? "" : "s"}` : "Weighing the evidence"),
-          }),
-          wait(MIN_SCAN_MS),
-        ]);
+        const on = {
+          sources: items => card === current && liveSources(items),
+          factcheck: fc => card === current && liveFactcheck(fc),
+          early: e => card === current && liveEarly(e),
+          judging: n => card === current && setScanLabel(n ? `Reading ${n} source${n === 1 ? "" : "s"}` : "Weighing the evidence"),
+        };
+        // A sleeping backend can take longer to wake than one request may wait.
+        // By the second try it is up, so retry once instead of showing an error.
+        const stream = streamCheck(current, current.text, on).catch(err => {
+          if (!err.coldStart || card !== current) throw err;
+          return streamCheck(current, current.text, on);
+        });
+        [data] = await Promise.all([stream, wait(MIN_SCAN_MS)]);
       } catch (err) {
         if (!(err instanceof StreamUnavailable)) throw err;
         // Older backend without /check/stream: one request, same result.

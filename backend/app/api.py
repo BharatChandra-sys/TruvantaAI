@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 import os
 import hashlib
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ from app.schemas import MessageRequest, MessageResponse
 from app.analysis.ml import run_ml_analysis
 from app.analysis.ai import run_ai_analysis
 from app.analysis.evidence import fetch_evidence
-from app.analysis.chat import is_claim, run_chat
+from app.analysis.chat import is_claim, run_chat, conversation_context
 from app.analysis.manipulation import analyze_manipulation
 from app.analysis.claim_extractor import extract_claims
 from app.analysis.drift import record as record_drift
@@ -27,7 +28,7 @@ from app.analysis.credibility import update_from_stance, get_all_scores
 from app.analysis.multilingual import normalize_claim
 from app.analysis.explainability import build_explanation
 from app.logic.decision import decide
-from app.auth import get_optional_user as get_current_user_optional
+from app.auth import get_current_user, get_optional_user as get_current_user_optional
 from app.models import User, ChatSession, ClaimRecord, VelocityRecord
 from app.routes.history_routes import save_message
 
@@ -121,6 +122,42 @@ def submit_feedback(
     return {"message": "Feedback recorded. Thank you."}
 
 
+def _history_content(m) -> str:
+    """A stored message as the model should see it: a fact-check keeps its verdict,
+    so a follow-up ("why is that false?") makes sense."""
+    if m.role == "assistant" and m.is_claim and m.verdict:
+        return f"[Fact-check result: {m.verdict}, {round((m.confidence or 0) * 100)}% confidence] {m.content}"
+    return m.content
+
+
+def _settled_answer(text: str):
+    """A verdict already decided from sources for this claim: by the in-page card
+    within the last day (its cache), or by earlier checks (the claim memory).
+    Returned in the shape do_grounded produces, so the popup's full report skips
+    a second search and model call. None when there is nothing settled."""
+    hit = None
+    try:
+        from app.cache import cache
+        hit = cache.get("stream:" + hashlib.sha256(" ".join(text.lower().split()).encode()).hexdigest())
+        if not hit:
+            from app.retrieval.memory import lookup
+            hit = lookup(text)["instant"]
+    except Exception as e:
+        logger.debug("Settled-answer lookup skipped: %s", e)
+    if not hit or hit.get("verdict") not in ("real", "fake") or hit.get("basis") != "sources":
+        return None
+    articles = hit.get("evidence_articles") or []
+    ai_score = hit.get("ai_score")
+    if ai_score is None:
+        ai_score = {"fake": 0.85, "real": 0.15}[hit["verdict"]]
+    return {
+        "ai": (ai_score, hit.get("explanation", "")),
+        "evidence": (hit.get("evidence_score"), [a["url"] for a in articles if a.get("url")], articles),
+        "grounded": {"verdict": hit["verdict"], "confidence": hit["confidence"], "model": hit.get("model")},
+        "settled": True,
+    }
+
+
 def _run_pipeline_parallel(text: str, image_url: str = None, db=None):
     """Run ML, AI, evidence in parallel with per-component caching."""
     from app.cache import partial_cache
@@ -145,6 +182,9 @@ def _run_pipeline_parallel(text: str, image_url: str = None, db=None):
         """Search the web for evidence, then have the model judge those passages."""
         from app.analysis.search import search_evidence, to_evidence
         from app.analysis.ai import run_grounded_analysis
+        settled = _settled_answer(text)
+        if settled:
+            return settled
         passages = search_evidence(text)
         grounded = run_grounded_analysis(text, passages)
         ev_score, urls, articles, explanation = to_evidence(passages, grounded)
@@ -191,8 +231,17 @@ def _run_pipeline_parallel(text: str, image_url: str = None, db=None):
         try:
             manip_pre, _ = analyze_manipulation(text)
             if manip_pre > 0.2:
+                from app.cache import cache
                 from app.analysis.cloud_models import get_inoculation
-                return get_inoculation(text[:500])
+                # One model call per claim per day, not one per request.
+                key = "inoculation:" + hashlib.sha256(text[:500].lower().encode()).hexdigest()
+                hit = cache.get(key)
+                if hit:
+                    return hit
+                result = get_inoculation(text[:500])
+                if result:
+                    cache.set(key, result, 24 * 60 * 60)
+                return result
         except Exception:
             pass
         return None
@@ -242,7 +291,8 @@ def _run_pipeline_parallel(text: str, image_url: str = None, db=None):
 def message(
     req: MessageRequest,
     db: Session = Depends(get_db),
-    user: Optional[User] = Depends(get_current_user_optional),
+    # Signed-in users only: checks spend free-tier quotas (same rule as /check/stream).
+    user: User = Depends(get_current_user),
 ):
     text = req.message.strip()
     if not text:
@@ -250,7 +300,12 @@ def message(
     if len(text) > 2000:
         raise HTTPException(status_code=400, detail="Message too long (max 2000 characters)")
 
-    # Resolve or create session for logged-in users
+    # Where the conversation lives:
+    #  - a saved session (the popup): history comes from the database;
+    #  - the conversation the client sent (the in-page card keeps its own, so its
+    #    follow-up questions have context and don't each start a saved chat);
+    #  - neither: this is the first message of a new saved chat.
+    client_history = conversation_context(req.history)
     session_id = None
     if user:
         if req.session_id:
@@ -259,7 +314,7 @@ def message(
                 ChatSession.user_id == user.id
             ).first()
             session_id = s.id if s else None
-        if not session_id:
+        if not session_id and not client_history:
             s = ChatSession(user_id=user.id, title="New Chat")
             db.add(s)
             db.commit()
@@ -271,10 +326,10 @@ def message(
         from app.models import ChatMessage
         db_msgs = db.query(ChatMessage).filter(
             ChatMessage.session_id == session_id
-        ).order_by(ChatMessage.created_at).all()
-        history = [{"role": m.role, "content": m.content} for m in db_msgs[-12:]]
+        ).order_by(ChatMessage.created_at.desc(), ChatMessage.id.desc()).limit(12).all()
+        history = [{"role": m.role, "content": _history_content(m)} for m in reversed(db_msgs)]
     else:
-        history = req.history or []
+        history = client_history
 
     # Save user message
     if session_id:
@@ -324,6 +379,20 @@ def message(
         sub_claims = [text]
     primary_claim = sub_claims[0]
 
+    # ── Adversarial input detection (item 116) ────────────────
+    adversarial_info = None
+    try:
+        from app.analysis.cloud_models import detect_adversarial_input
+        adv = detect_adversarial_input(text)
+        if adv["is_adversarial"]:
+            adversarial_info = adv
+            logger.warning("Adversarial input detected: %s", adv["signals"])
+            # Analyse the cleaned text (this runs before the pipeline)
+            if adv["cleaned_text"] != text:
+                primary_claim = adv["cleaned_text"][:2000]
+    except Exception as e:
+        logger.debug("Adversarial detection skipped: %s", e)
+
     # ── Run core pipeline (3 workers max for 512MB RAM) ───────
     pipeline = _run_pipeline_parallel(primary_claim, image_url=req.image_url, db=db)
 
@@ -346,20 +415,6 @@ def message(
     # inoculation already computed in parallel pipeline (do_inoculation)
     if inoculation:
         logger.info("Inoculation (parallel): technique=%s", inoculation.get("technique"))
-
-    # ── Adversarial input detection (item 116) ────────────────
-    adversarial_info = None
-    try:
-        from app.analysis.cloud_models import detect_adversarial_input
-        adv = detect_adversarial_input(text)
-        if adv["is_adversarial"]:
-            adversarial_info = adv
-            logger.warning("Adversarial input detected: %s", adv["signals"])
-            # Use cleaned text for analysis
-            if adv["cleaned_text"] != text:
-                primary_claim = adv["cleaned_text"][:2000]
-    except Exception as e:
-        logger.debug("Adversarial detection skipped: %s", e)
 
     # ── Velocity tracking (rapid spread detection) ────────────
     velocity_metrics = None
@@ -542,15 +597,11 @@ def message(
     
     if verdict == "fake" or manip_score > 0.2:
         try:
-            # Get model and vectorizer for SHAP
-            import joblib
-            model_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "model.joblib")
-            vec_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "vectorizer.joblib")
-            
-            if os.path.exists(model_path) and os.path.exists(vec_path):
-                model = joblib.load(model_path)
-                vectorizer = joblib.load(vec_path)
-                
+            # The model and vectorizer are already in memory (loaded once at startup).
+            from app.analysis import ml as _ml
+            if _ml._load_tfidf():
+                model, vectorizer = _ml._model, _ml._vectorizer
+
                 # Try SHAP-based highlighting with timeout
                 highlights, explanation_type = get_highlights_with_shap(
                     text, model, vectorizer, model_type="tfidf", timeout_ms=500
@@ -571,54 +622,28 @@ def message(
     # Record for drift detection
     record_drift(verdict, confidence)
 
-    # ── LangGraph memory write (non-blocking background task) ────
-    # Persists the result to fact_checks + evidence_documents for future RAG retrieval.
-    # Runs in a background thread so it never adds latency to the response.
-    def _persist_to_memory():
-        try:
-            from database import SessionLocal
-            from app.retrieval.vector_store import upsert_fact_check, upsert_evidence, link_evidence
-            _db = SessionLocal()
-            try:
-                fc = upsert_fact_check(
-                    _db,
-                    claim_hash         = hashlib.sha256(primary_claim.lower().strip().encode()).hexdigest(),
-                    claim_text         = primary_claim,
-                    verdict            = verdict,
-                    confidence         = confidence,
-                    tfidf_score        = ml_result.get("fake"),
-                    llm_verdict        = "fake" if ai_score > 0.5 else "real",
-                    llm_confidence     = ai_score,
-                    evidence_score     = evidence_score,
-                    manipulation_score = manip_score,
-                    rag_assessment     = None,
-                    language           = detected_lang,
-                    model_version      = "2.6.1",
-                )
-                for article in evidence_articles[:5]:
-                    url = article.get("url", "")
-                    if not url:
-                        continue
-                    doc = upsert_evidence(
-                        _db,
-                        url         = url,
-                        title       = article.get("title"),
-                        domain      = article.get("source", ""),
-                        stance      = article.get("stance"),
-                        trust_score = article.get("trust_score", 0.5),
-                        source_tier = 3,
-                        source_type = "news",
-                    )
-                    link_evidence(_db, fc.id, doc.id,
-                                  relevance_score=article.get("relevance_score"),
-                                  stance=article.get("stance"))
-            finally:
-                _db.close()
-        except Exception as e:
-            logger.debug("Background memory write failed: %s", e)
+    # ── Memory write, off the request path ─────────────────────
+    # The same store the live check reads (retrieval/memory.py): one transaction,
+    # one embedding call. A verdict counts as sourced only when the model read
+    # sources and its verdict stood; anything else is stored as model-only.
+    if not pipeline.get("settled"):   # a reused answer is already in memory
+        sourced = bool(grounded_meta and grounded_meta.get("model")
+                       and grounded_meta["verdict"] == verdict)
+        memory_result = {
+            "verdict": verdict, "confidence": confidence, "explanation": explanation,
+            "evidence_articles": evidence_articles, "evidence_score": evidence_score,
+            "ai_score": ai_score, "model": (grounded_meta or {}).get("model"),
+            "basis": "sources" if sourced else "knowledge",
+        }
 
-    import threading
-    threading.Thread(target=_persist_to_memory, daemon=True, name="memory-write").start()
+        def _persist_to_memory():
+            try:
+                from app.retrieval.memory import remember
+                remember(primary_claim, memory_result)
+            except Exception as e:
+                logger.debug("Background memory write failed: %s", e)
+
+        threading.Thread(target=_persist_to_memory, daemon=True, name="memory-write").start()
 
     # Temporal claim tracking + velocity persistence
     claim_hash = hashlib.sha256(primary_claim.lower().strip().encode()).hexdigest()

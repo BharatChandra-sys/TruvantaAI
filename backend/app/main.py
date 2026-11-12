@@ -109,6 +109,26 @@ class _SuppressHealthLogs(logging.Filter):
 logging.getLogger("uvicorn.access").addFilter(_SuppressHealthLogs())
 
 
+def _schema_is_current() -> bool:
+    """True when the database is at the newest migration and has every model table.
+    Any doubt (no version table, a missing table, an error) returns False, and
+    startup then creates tables and runs migrations as usual."""
+    try:
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+        from sqlalchemy import inspect, text
+        backend_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+        cfg = Config(os.path.join(backend_dir, "alembic.ini"))
+        cfg.set_main_option("script_location", os.path.join(backend_dir, "alembic"))
+        head = ScriptDirectory.from_config(cfg).get_current_head()
+        with engine.connect() as conn:
+            current = conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+            tables = set(inspect(conn).get_table_names())
+        return bool(head) and current == head and not (set(Base.metadata.tables) - tables)
+    except Exception:
+        return False
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
 
@@ -157,57 +177,63 @@ async def lifespan(app: FastAPI):
         logger.error("Database unreachable after 3 attempts — check DATABASE_URL and Neon project status")
         # Don't crash — app can still serve health checks and static responses
 
-    # ── Step 2: Create all tables from SQLAlchemy models ─────
-    # create_all is idempotent — skips existing tables, creates missing ones
-    try:
-        Base.metadata.create_all(bind=engine)
-        logger.info("Table check complete (create_all — no-op for existing tables)")
-    except Exception as e:
-        logger.error("create_all failed: %s", e)
-
-    # ── Step 3: Run Alembic migrations ───────────────────────
-    # Runs on every deploy — no-op if already at head
-    # Adds new columns/indexes without dropping existing data
-    # Skip if DATABASE_URL not set (local dev mode)
-    if os.getenv("DATABASE_URL"):
-        try:
-            import subprocess, sys
-            alembic_ini = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "alembic.ini")
-            if os.path.exists(alembic_ini):
-                result = subprocess.run(
-                    [sys.executable, "-m", "alembic", "-c", alembic_ini, "upgrade", "head"],
-                    capture_output=True, text=True, timeout=60,  # Reduced from 120s to 60s
-                    env={**os.environ, "PYTHONUNBUFFERED": "1"},
-                )
-                if result.returncode == 0:
-                    out = result.stdout.strip() or "already at head"
-                    logger.info("Alembic migrations: %s", out)
-                else:
-                    logger.warning("Alembic migration warning: %s", result.stderr.strip())
-            else:
-                logger.debug("alembic.ini not found — skipping Alembic (SQLite dev mode)")
-        except subprocess.TimeoutExpired:
-            logger.error("Alembic migration timed out after 60s — skipping")
-        except Exception as e:
-            logger.warning("Alembic migration failed: %s — tables already created via create_all", e)
+    # Steps 2-4 create tables and run migrations. On a wake-up from sleep the
+    # schema is already current, and one cheap check lets us skip them (the
+    # Alembic step starts a second Python process).
+    if _db_ok and _schema_is_current():
+        logger.info("Database schema is current; skipping table creation and migrations")
     else:
-        logger.info("DATABASE_URL not set — skipping Alembic (local dev mode)")
-
-    # ── Step 4: Verify critical tables exist ─────────────────
-    # Belt-and-suspenders check: log any model table that's missing from DB
-    from sqlalchemy import inspect as _inspect
-    try:
-        inspector   = _inspect(engine)
-        db_tables   = set(inspector.get_table_names())
-        model_tables = set(Base.metadata.tables.keys())
-        missing = model_tables - db_tables
-        if missing:
-            logger.warning("Tables still missing after migration: %s — attempting create_all again", missing)
+        # ── Step 2: Create all tables from SQLAlchemy models ─────
+        # create_all is idempotent — skips existing tables, creates missing ones
+        try:
             Base.metadata.create_all(bind=engine)
+            logger.info("Table check complete (create_all — no-op for existing tables)")
+        except Exception as e:
+            logger.error("create_all failed: %s", e)
+
+        # ── Step 3: Run Alembic migrations ───────────────────────
+        # Runs on every deploy — no-op if already at head
+        # Adds new columns/indexes without dropping existing data
+        # Skip if DATABASE_URL not set (local dev mode)
+        if os.getenv("DATABASE_URL"):
+            try:
+                import subprocess, sys
+                alembic_ini = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "alembic.ini")
+                if os.path.exists(alembic_ini):
+                    result = subprocess.run(
+                        [sys.executable, "-m", "alembic", "-c", alembic_ini, "upgrade", "head"],
+                        capture_output=True, text=True, timeout=60,  # Reduced from 120s to 60s
+                        env={**os.environ, "PYTHONUNBUFFERED": "1"},
+                    )
+                    if result.returncode == 0:
+                        out = result.stdout.strip() or "already at head"
+                        logger.info("Alembic migrations: %s", out)
+                    else:
+                        logger.warning("Alembic migration warning: %s", result.stderr.strip())
+                else:
+                    logger.debug("alembic.ini not found — skipping Alembic (SQLite dev mode)")
+            except subprocess.TimeoutExpired:
+                logger.error("Alembic migration timed out after 60s — skipping")
+            except Exception as e:
+                logger.warning("Alembic migration failed: %s — tables already created via create_all", e)
         else:
-            logger.info("All %d model tables present in database", len(model_tables))
-    except Exception as e:
-        logger.warning("Table verification failed: %s", e)
+            logger.info("DATABASE_URL not set — skipping Alembic (local dev mode)")
+
+        # ── Step 4: Verify critical tables exist ─────────────────
+        # Belt-and-suspenders check: log any model table that's missing from DB
+        from sqlalchemy import inspect as _inspect
+        try:
+            inspector   = _inspect(engine)
+            db_tables   = set(inspector.get_table_names())
+            model_tables = set(Base.metadata.tables.keys())
+            missing = model_tables - db_tables
+            if missing:
+                logger.warning("Tables still missing after migration: %s — attempting create_all again", missing)
+                Base.metadata.create_all(bind=engine)
+            else:
+                logger.info("All %d model tables present in database", len(model_tables))
+        except Exception as e:
+            logger.warning("Table verification failed: %s", e)
 
     # ── Load TF-IDF model only (fast, ~50ms) ──────────────────
     # RoBERTa is NOT preloaded — it's 500MB and would time out Render's
@@ -319,8 +345,11 @@ async def lifespan(app: FastAPI):
                 except Exception as e:
                     logger.debug("Keep-alive scheduler error: %s", e)
 
-                # ── Data collection (every hour) ──────────────────
-                if now - last_collection_check >= 3600:
+                # ── Data collection (every hour, only if the app was used) ──
+                # With no requests since the last run there is nothing new to
+                # process, and skipping lets the Neon database stay asleep.
+                from app import middleware as _mw
+                if now - last_collection_check >= 3600 and _mw.last_activity > last_collection_check:
                     try:
                         from app.analysis.continuous_learning import maybe_collect_data
                         result = maybe_collect_data(SessionLocal)
@@ -368,7 +397,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="FactCheckAI",
-    version="2.6.1",
+    version="2.6.4",
     lifespan=lifespan,
     description="FactCheckAI — AI-powered fact-checking API with ML models, evidence search, and real-time verification",
     # Disable docs in production — set ENABLE_DOCS=true to re-enable for debugging

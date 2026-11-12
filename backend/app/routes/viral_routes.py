@@ -19,7 +19,9 @@ from database import get_db
 from app.models import VelocityRecord, ClaimRecord
 from app.analysis.velocity import get_stats, get_top_viral
 
-router = APIRouter(prefix="/viral", tags=["viral"])
+from app.auth import get_current_user
+
+router = APIRouter(prefix="/viral", tags=["viral"], dependencies=[Depends(get_current_user)])
 logger = logging.getLogger(__name__)
 
 

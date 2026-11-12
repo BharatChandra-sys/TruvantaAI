@@ -71,6 +71,7 @@ def test_early_answer_streams_before_the_sourced_verdict(monkeypatch):
     monkeypatch.setattr(ai, "run_grounded_analysis", slow_judge)
     monkeypatch.setattr(ai, "run_knowledge_analysis", lambda claim: dict(KNOWS, verdict="fake", confidence=0.7))
     monkeypatch.setattr(stream_routes, "_persist", lambda *a: None)
+    monkeypatch.setattr(stream_routes, "EARLY_ANSWER", True)   # off by default; EARLY_ANSWER=true enables it
 
     events = [e.split("\n", 1)[0] for e in stream_routes._run(f"claim {uuid.uuid4()}", None)]
     assert "event: early" in events

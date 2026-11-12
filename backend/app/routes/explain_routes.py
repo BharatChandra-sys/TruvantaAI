@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from database import get_db
-from app.auth import get_optional_user as get_current_user_optional
+from app.auth import get_current_user  # sign-in required: these routes spend free-tier quotas
 from app.models import User
 from app.schemas import ExplainRequest, ExplainResponse
 from ..analysis.shap_explainer import explain_prediction
@@ -57,7 +57,7 @@ def _get_models():
 def explain_claim(
     req: ExplainRequest,
     db: Session = Depends(get_db),
-    user: Optional[User] = Depends(get_current_user_optional)
+    user: User = Depends(get_current_user)
 ):
     """
     Generate detailed SHAP explanation for a claim

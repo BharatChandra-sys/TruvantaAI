@@ -12,7 +12,7 @@ from typing import Optional
 import logging
 
 from database import get_db
-from app.auth import get_optional_user as get_current_user_optional
+from app.auth import get_current_user  # sign-in required: these routes spend free-tier quotas
 from app.models import User
 from app.analysis.audio_transcription import transcribe_audio, validate_audio_file
 
@@ -26,7 +26,7 @@ async def transcribe_audio_endpoint(
     language: str = Form("en"),
     auto_detect_claim: bool = Form(True),
     db: Session = Depends(get_db),
-    user: Optional[User] = Depends(get_current_user_optional),
+    user: User = Depends(get_current_user),
 ):
     """
     Transcribe audio file to text with smart claim detection
@@ -144,7 +144,7 @@ async def verify_audio_claim(
     audio: UploadFile = File(...),
     language: str = Form("en"),
     db: Session = Depends(get_db),
-    user: Optional[User] = Depends(get_current_user_optional),
+    user: User = Depends(get_current_user),
 ):
     """
     Transcribe audio and verify the claim

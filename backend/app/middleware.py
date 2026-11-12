@@ -11,6 +11,7 @@ Security + observability middleware.
 - Request ID injection (X-Request-ID header)
 - Structured request logging (method, path, status, duration, request_id)
 """
+import hashlib
 import time
 import uuid
 import logging
@@ -28,6 +29,7 @@ _LIMITS = {
     "/auth/forgot-password": (5,  300),
     "/auth/reset-password":  (5,   60),
     "/auth/google":          (10,  60),
+    "/check/stream":         (15,  60),   # each check can cost two model calls
     "/message":              (20,  60),   # Lowered from 30 to protect AI limits
     "/feedback":             (20,  60),
     "/stats":                (30,  60),
@@ -37,6 +39,7 @@ _LIMITS = {
 _DEFAULT_LIMIT = (60, 60)
 
 _store: dict = defaultdict(list)
+last_activity = 0.0   # time of the last real request (health checks and keep-alive pings excluded)
 MAX_BODY_BYTES = 2 * 1024 * 1024  # 2 MB — allows compressed image base64
 _last_store_cleanup = 0.0
 _STORE_CLEANUP_INTERVAL = 300  # prune every 5 minutes
@@ -61,10 +64,26 @@ _SECURITY_HEADERS = {
 
 
 def _get_limit(path: str):
+    """The limit for a path and the bucket it counts against.
+
+    The bucket is the matching route group, not the full path, so
+    /history/sessions/1 and /history/sessions/2 share one allowance.
+    """
     for prefix, limit in _LIMITS.items():
         if path.startswith(prefix):
-            return limit
-    return _DEFAULT_LIMIT
+            return limit, prefix
+    return _DEFAULT_LIMIT, "/" + path.strip("/").split("/", 1)[0]
+
+
+def _caller(request: Request, path: str) -> str:
+    """Who to count a request against: the signed-in user's token when there is
+    one, otherwise the IP. X-Forwarded-For can be set by the client, so a token
+    is the stronger key. Sign-in routes always count by IP: a made-up token must
+    not buy extra login attempts."""
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer ") and not path.startswith("/auth"):
+        return "t:" + hashlib.sha256(auth.encode()).hexdigest()[:16]
+    return _client_ip(request)
 
 
 def _client_ip(request: Request) -> str:
@@ -79,22 +98,24 @@ class SecurityMiddleware(BaseHTTPMiddleware):
         start = time.perf_counter()
 
         # ── Skip health checks ────────────────────────────────
-        if path == "/health":
+        if path.startswith("/health"):
             response = await call_next(request)
             return response
+        global last_activity
+        last_activity = time.time()
 
         # ── Request body size guard ───────────────────────────
         content_length = request.headers.get("content-length")
         if content_length and int(content_length) > MAX_BODY_BYTES:
             return JSONResponse(
                 status_code=413,
-                content={"detail": "Request body too large (max 64KB)"},
+                content={"detail": "Request body too large (max 2 MB)"},
             )
 
         # ── Rate limiting ─────────────────────────────────────
-        max_req, window = _get_limit(path)
+        (max_req, window), bucket = _get_limit(path)
         ip  = _client_ip(request)
-        key = f"{ip}:{path}"
+        key = f"{_caller(request, path)}:{bucket}"
         now = time.time()
 
         # Periodic cleanup to prevent unbounded memory growth

@@ -10,6 +10,7 @@ import json
 import logging
 import time
 import requests
+from app.analysis.ai_config import http as _http
 from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 from typing import List, Optional, Tuple
 
@@ -102,7 +103,7 @@ def _call_openai_compat(url: str, key: str, model: str, text: str,
     elif "qwen" in model:
         payload["reasoning_effort"] = "none"
     
-    r = requests.post(
+    r = _http.post(
         url,
         headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
         json=payload,
@@ -149,7 +150,7 @@ def _call_groq(text: str) -> dict:
 
 
 def _post_json(url: str, payload: dict, timeout: int) -> dict:
-    r = requests.post(url, headers={"Content-Type": "application/json"}, json=payload, timeout=timeout)
+    r = _http.post(url, headers={"Content-Type": "application/json"}, json=payload, timeout=timeout)
     if r.status_code != 200:
         raise ModelCallError(r.status_code, r.text[:2000])   # full enough to classify (quota details come late)
     return r.json()
@@ -289,7 +290,7 @@ def _call_huggingface(text: str) -> dict:
         headers["Authorization"] = f"Bearer {token}"
     
     try:
-        r = requests.post(
+        r = _http.post(
             HUGGINGFACE_URL,
             headers=headers,
             json={"inputs": prompt, "parameters": {"max_new_tokens": 300, "temperature": 0.1}},

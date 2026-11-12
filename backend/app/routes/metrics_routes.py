@@ -18,7 +18,9 @@ from database import get_db
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["metrics"])
+from app.auth import get_current_user
+
+router = APIRouter(tags=["metrics"], dependencies=[Depends(get_current_user)])
 
 # Cached health metrics — recomputed at most once per 60 seconds
 _health_cache: dict = {}

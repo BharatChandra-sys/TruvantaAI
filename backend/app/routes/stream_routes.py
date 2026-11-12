@@ -27,7 +27,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 
 from app.auth import get_current_user_id
@@ -49,9 +49,15 @@ _MEMORY_POOL = ThreadPoolExecutor(max_workers=4, thread_name_prefix="memory")
 # stream can keep sending events while they work.
 _MODEL_POOL = ThreadPoolExecutor(max_workers=16, thread_name_prefix="stream-model")
 _MODEL_TIMEOUT_S = 15
-# EARLY_ANSWER=false turns off the early answer: checks then behave as before, and
-# the knowledge answer is only asked for when sources can't decide.
-EARLY_ANSWER = os.getenv("EARLY_ANSWER", "true").lower() != "false"
+# The early answer costs a second model call on every check. On free-tier quotas
+# that halves how many checks a day can serve, so it is off unless
+# EARLY_ANSWER=true. When off, the knowledge answer is only asked for when
+# sources can't decide.
+EARLY_ANSWER = os.getenv("EARLY_ANSWER", "false").lower() == "true"
+# "fresh" skips the cache and memory, so every request costs a full search and
+# model call. It exists for the evaluation: set ALLOW_FRESH_CHECKS=true on the
+# server being evaluated. Off by default, so clients can't use it to burn quota.
+ALLOW_FRESH = os.getenv("ALLOW_FRESH_CHECKS", "false").lower() == "true"
 
 # How long the search waits for the lookup before starting (an instant answer
 # skips it entirely), and how long to still wait once the search has ended.
@@ -313,8 +319,10 @@ def _run(claim: str, user_id, fresh: bool = False):
 def check_stream(req: MessageRequest, user_id: int = Depends(get_current_user_id)):
     """Signed-in users only: checks use free-tier quotas that must not be open to anyone."""
     claim = req.message.strip()
+    if len(claim) > 2000:
+        raise HTTPException(status_code=400, detail="Message too long (max 2000 characters)")
     return StreamingResponse(
-        _run(claim, user_id, fresh=req.fresh),
+        _run(claim, user_id, fresh=req.fresh and ALLOW_FRESH),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )

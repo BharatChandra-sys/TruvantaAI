@@ -37,7 +37,7 @@ chrome.runtime.onInstalled.addListener(({ reason }) => {
 
   // Alarm-based keep-alive (MV3 service workers can be suspended;
   // setInterval is unreliable — alarms survive suspension)
-  chrome.alarms.create("keepAlive", { periodInMinutes: 4 });
+  chrome.alarms.create("keepAlive", { periodInMinutes: 10 });
 
   // Ping immediately on install/update
   pingBackend();
@@ -58,7 +58,7 @@ chrome.runtime.onInstalled.addListener(({ reason }) => {
 // Without this, the keepAlive alarm is lost after the first restart.)
 chrome.alarms.get("keepAlive", (alarm) => {
   if (!alarm) {
-    chrome.alarms.create("keepAlive", { periodInMinutes: 4 });
+    chrome.alarms.create("keepAlive", { periodInMinutes: 10 });
   }
 });
 

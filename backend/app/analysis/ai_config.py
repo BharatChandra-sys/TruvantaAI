@@ -9,6 +9,12 @@ import time
 import logging
 import threading
 import requests
+from requests.adapters import HTTPAdapter
+
+# One pooled session for every model-provider call. Connections stay open
+# between calls, so a check doesn't pay for a new TLS handshake each time.
+http = requests.Session()
+http.mount("https://", HTTPAdapter(pool_connections=8, pool_maxsize=20))
 from typing import Dict, List, Optional, Tuple
 from functools import lru_cache
 
@@ -111,7 +117,7 @@ def _discover(provider: str, fetch) -> List[str]:
 
 
 def _get_json(url: str, **kwargs) -> dict:
-    r = requests.get(url, timeout=10, **kwargs)
+    r = http.get(url, timeout=10, **kwargs)
     r.raise_for_status()
     return r.json()
 

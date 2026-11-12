@@ -1,0 +1,50 @@
+name: Release extension
+
+# Push a tag that matches the manifest version to publish a release:
+#
+#   git tag v2.6.5 && git push origin v2.6.5
+#
+# This checks the extension, builds the ZIP and attaches it to a GitHub Release.
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write   # create the release and upload the ZIP
+
+jobs:
+  release:
+    name: Build and publish ZIP
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Syntax-check every script
+        run: find extension -name '*.js' -print0 | xargs -0 -n1 node --check
+
+      - name: Tag matches manifest version
+        run: node .github/scripts/check-manifest.js "$GITHUB_REF_NAME"
+
+      - name: Production backend is selected
+        run: grep -q 'USE_LOCAL_BACKEND = false' extension/env.js
+
+      - name: Build ZIP
+        run: |
+          cd extension
+          # Leave out build inputs and source artwork the extension never loads.
+          zip -r -q "../truvanta-${GITHUB_REF_NAME}.zip" . \
+            -x 'tailwind.config.js' 'tailwind.input.css' \
+               'logo.png' 'icons/logo.png' 'icons/truvanta-logo.png' \
+               '*.DS_Store' '*/node_modules/*'
+          ls -lh "../truvanta-${GITHUB_REF_NAME}.zip"
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" "truvanta-${GITHUB_REF_NAME}.zip" --title "TruvantaAI ${GITHUB_REF_NAME}" --generate-notes

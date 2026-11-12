@@ -29,7 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from sqlalchemy.orm import Session
 
 from database import get_db
-from app.auth import get_optional_user as get_current_user_optional
+from app.auth import get_current_user  # sign-in required: these routes spend free-tier quotas
 from app.models import User
 
 router = APIRouter(prefix="/upload", tags=["upload"])
@@ -137,7 +137,7 @@ async def upload_file(
     claim:    str        = Form(""),
     language: str        = Form("en"),
     db:       Session    = Depends(get_db),
-    user:     Optional[User] = Depends(get_current_user_optional),
+    user:     User = Depends(get_current_user),
 ):
     """
     Upload an image, audio file, PDF, DOCX, or TXT for fact-checking.
