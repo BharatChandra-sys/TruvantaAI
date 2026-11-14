@@ -80,7 +80,7 @@ jobs:
         with:
           node-version: '20'
 
-      - run: npm ci
+      - run: npm install
       - run: npx tsc --noEmit
       # The site has existing lint errors (28 on 2026-11-12, mostly
       # react-hooks/set-state-in-effect). Reported, not blocking, until they are fixed;
