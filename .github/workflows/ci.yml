@@ -30,7 +30,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11.9'
+          python-version: '3.11'
           cache: pip
           cache-dependency-path: backend/requirements*.txt
 
@@ -79,8 +79,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: npm
-          cache-dependency-path: factcheckai-website/package-lock.json
 
       - run: npm ci
       - run: npx tsc --noEmit
@@ -101,7 +99,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11.9'
+          python-version: '3.11'
 
       - name: Bandit (code) and pip-audit (dependencies)
         run: |
