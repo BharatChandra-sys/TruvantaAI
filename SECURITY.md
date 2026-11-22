@@ -22,7 +22,7 @@ We take security seriously. If you discover a security vulnerability, please fol
 
 **DO NOT** create a public GitHub issue for security vulnerabilities.
 
-Instead, please email us directly at: **security@factcheckai.com**
+Instead, please email us directly at: **contact@truvantaai.tech**
 
 ### 📧 What to Include
 
@@ -151,7 +151,7 @@ We track and publicly report security metrics:
 ### 📞 Contact Information
 
 #### Security Team
-- **Email**: security@factcheckai.com
+- **Email**: contact@truvantaai.tech
 - **PGP Key**: [Download public key](https://factcheckai.com/pgp-key.asc)
 - **Response Time**: 24 hours for critical issues
 

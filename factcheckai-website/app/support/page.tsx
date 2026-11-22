@@ -30,7 +30,7 @@ export default function Support() {
           {/* Quick Links */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <a
-              href="mailto:contact@gari.live?subject=Bug%20Report"
+              href="mailto:contact@truvantaai.tech?subject=Bug%20Report"
               className="bg-surface-container p-6 rounded-xl flex flex-col gap-3 hover:bg-surface-container-high transition-colors"
             >
               <span className="material-symbols-outlined text-3xl text-error">bug_report</span>
@@ -41,7 +41,7 @@ export default function Support() {
             </a>
 
             <a
-              href="mailto:contact@gari.live?subject=Feature%20Request"
+              href="mailto:contact@truvantaai.tech?subject=Feature%20Request"
               className="bg-surface-container p-6 rounded-xl flex flex-col gap-3 hover:bg-surface-container-high transition-colors"
             >
               <span className="material-symbols-outlined text-3xl text-surface-tint">lightbulb</span>
@@ -52,7 +52,7 @@ export default function Support() {
             </a>
 
             <a
-              href="mailto:contact@gari.live?subject=General%20Inquiry"
+              href="mailto:contact@truvantaai.tech?subject=General%20Inquiry"
               className="bg-surface-container p-6 rounded-xl flex flex-col gap-3 hover:bg-surface-container-high transition-colors"
             >
               <span className="material-symbols-outlined text-3xl text-secondary">mail</span>
@@ -92,7 +92,7 @@ export default function Support() {
               <div>
                 <h3 className="text-lg font-semibold text-on-surface mb-2">How can I report a bug or suggest features?</h3>
                 <p className="text-base text-on-surface-variant leading-relaxed">
-                  Email us at <a href="mailto:contact@gari.live" className="text-surface-tint hover:underline">contact@gari.live</a> with details about the issue or your feature request.
+                  Email us at <a href="mailto:contact@truvantaai.tech" className="text-surface-tint hover:underline">contact@truvantaai.tech</a> with details about the issue or your feature request.
                 </p>
               </div>
 
@@ -117,8 +117,8 @@ export default function Support() {
                     <h3 className="text-lg font-semibold text-on-surface">Email Support</h3>
                   </div>
                   <p className="text-sm text-on-surface-variant">All inquiries:</p>
-                  <a href="mailto:contact@gari.live" className="text-base text-surface-tint hover:underline">
-                    contact@gari.live
+                  <a href="mailto:contact@truvantaai.tech" className="text-base text-surface-tint hover:underline">
+                    contact@truvantaai.tech
                   </a>
                   <p className="text-sm text-on-surface-variant mt-4">Website:</p>
                   <a href="https://gari.live" target="_blank" className="text-base text-surface-tint hover:underline">
@@ -149,8 +149,8 @@ export default function Support() {
               <p className="text-base text-on-surface leading-relaxed mb-4">
                 If you discover a security vulnerability, please email us with <strong>[SECURITY]</strong> in the subject line:
               </p>
-              <a href="mailto:contact@gari.live" className="text-lg text-error hover:underline font-semibold">
-                contact@gari.live
+              <a href="mailto:contact@truvantaai.tech" className="text-lg text-error hover:underline font-semibold">
+                contact@truvantaai.tech
               </a>
               <p className="text-sm text-on-surface-variant mt-4">
                 We aim to respond within 48 hours and will credit responsible disclosures in our changelog.

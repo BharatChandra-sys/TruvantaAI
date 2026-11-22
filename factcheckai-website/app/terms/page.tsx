@@ -180,7 +180,7 @@ export default function TermsOfService() {
               For questions about these Terms:
             </p>
             <ul className="list-none text-base text-on-surface-variant leading-relaxed space-y-2">
-              <li><strong>Email:</strong> <a href="mailto:contact@gari.live" className="text-surface-tint hover:underline">contact@gari.live</a></li>
+              <li><strong>Email:</strong> <a href="mailto:contact@truvantaai.tech" className="text-surface-tint hover:underline">contact@truvantaai.tech</a></li>
               <li><strong>Website:</strong> <a href="https://gari.live" target="_blank" className="text-surface-tint hover:underline">gari.live</a></li>
             </ul>
           </section>

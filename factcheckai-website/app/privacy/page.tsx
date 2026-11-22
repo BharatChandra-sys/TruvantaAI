@@ -152,7 +152,7 @@ export default function PrivacyPolicy() {
             </ul>
 
             <p className="text-base text-on-surface-variant leading-relaxed mt-4">
-              To exercise any rights, contact us at: <a href="mailto:contact@gari.live" className="text-surface-tint hover:underline">contact@gari.live</a>
+              To exercise any rights, contact us at: <a href="mailto:contact@truvantaai.tech" className="text-surface-tint hover:underline">contact@truvantaai.tech</a>
             </p>
           </section>
 
@@ -168,7 +168,7 @@ export default function PrivacyPolicy() {
           <section className="flex flex-col gap-4">
             <h2 className="text-3xl font-bold text-on-surface">7. Children's Privacy</h2>
             <p className="text-base text-on-surface-variant leading-relaxed">
-              TruvantaAI does not knowingly collect data from children under 13. If you believe we've inadvertently collected such data, contact us immediately at <a href="mailto:contact@gari.live" className="text-surface-tint hover:underline">contact@gari.live</a>.
+              TruvantaAI does not knowingly collect data from children under 13. If you believe we've inadvertently collected such data, contact us immediately at <a href="mailto:contact@truvantaai.tech" className="text-surface-tint hover:underline">contact@truvantaai.tech</a>.
             </p>
           </section>
 
@@ -200,7 +200,7 @@ export default function PrivacyPolicy() {
               For privacy inquiries, data requests, or security concerns:
             </p>
             <ul className="list-none text-base text-on-surface-variant leading-relaxed space-y-2">
-              <li><strong>Email:</strong> <a href="mailto:contact@gari.live" className="text-surface-tint hover:underline">contact@gari.live</a></li>
+              <li><strong>Email:</strong> <a href="mailto:contact@truvantaai.tech" className="text-surface-tint hover:underline">contact@truvantaai.tech</a></li>
               <li><strong>Website:</strong> <a href="https://gari.live" target="_blank" className="text-surface-tint hover:underline">gari.live</a></li>
             </ul>
           </section>

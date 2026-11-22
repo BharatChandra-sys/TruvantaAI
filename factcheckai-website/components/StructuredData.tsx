@@ -63,14 +63,14 @@ export default function StructuredData() {
         contactPoint: [
           {
             '@type': 'ContactPoint',
-            email: 'contact@gari.live',
+            email: 'contact@truvantaai.tech',
             contactType: 'Customer Support',
             url: 'https://truvantaai.tech/support',
             availableLanguage: ['English'],
           },
           {
             '@type': 'ContactPoint',
-            email: 'contact@gari.live',
+            email: 'contact@truvantaai.tech',
             contactType: 'Technical Support',
             url: 'https://truvantaai.tech/support',
           },
