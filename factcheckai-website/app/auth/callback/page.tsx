@@ -27,21 +27,18 @@ export default function AuthCallbackPage() {
       const accessToken = params.get('access_token');
       const error       = params.get('error');
 
-      if (error) {
-        setStatus('error');
-        return;
-      }
-
-      if (accessToken) {
+      let next: 'done' | 'error';
+      if (error || !accessToken) {
+        next = 'error';
+      } else {
         // Chrome's launchWebAuthFlow is watching for the redirect to this URL.
         // It captures the full URL (including the token in the fragment) and
         // returns it to the extension — nothing else needs to happen here.
-        setStatus('done');
-      } else {
-        setStatus('error');
+        next = 'done';
       }
+      setTimeout(() => setStatus(next), 0);
     } catch {
-      setStatus('error');
+      setTimeout(() => setStatus('error'), 0);
     }
   }, []);
 
